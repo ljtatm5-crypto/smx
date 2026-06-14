@@ -87,7 +87,7 @@ function handleFolder(e) {
   const list = Array.from(e.target.files || []).filter(f => f.size > 0 && !f.name.startsWith('.') && !f.name.startsWith('~'))
   if (list.length === 0) { error.value = '所选文件夹中没有有效文件'; return }
   const ts = list.reduce((s, f) => s + f.size, 0)
-  if (ts > MAX * 10) { error.value = `总大小 ${fmtSize(ts)} 过大，建议分批处理`; return }
+  if (ts > MAX * 5) { error.value = `总大小 ${fmtSize(ts)} 过大，建议分批处理`; return }
   files.value = list; file.value = null; error.value = ''
 }
 

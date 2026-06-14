@@ -33,7 +33,7 @@ function fmtSize(b) {
   return (b / 1048576).toFixed(2) + ' MB'
 }
 
-const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500MB 浏览器限制
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2GB
 
 const SMC = {
   // === 文件加密（SM4-CBC + 盐值绑定）===
