@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <nav class="navbar">
-      <router-link to="/" class="logo">首页</router-link>
+      <router-link to="/" class="logo">国密算法综合应用平台</router-link>
       <div class="nav-links">
         <router-link to="/file">📁 文件加密</router-link>
         <router-link to="/sign">✍️ 数据验签</router-link>
