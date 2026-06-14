@@ -1,7 +1,6 @@
 // SM2 椭圆曲线公钥密码算法 (GB/T 32918-2016)
 // 基于 256-bit 素数域上的椭圆曲线: y² = x³ + ax + b
 import { sm3Hash } from './sm3.js'
-import { getRandomBytes } from './sm4.js'
 
 // 曲线参数
 const P = 0xfffffffeffffffffffffffffffffffffffffffff00000000ffffffffffffffffn
@@ -103,7 +102,7 @@ const G = new ECPoint(GX, GY)
 export function sm2GenerateKeyPair() {
   let d
   do {
-    const bytes = getRandomBytes(32)
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
     const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
     d = BigInt('0x' + hex)
   } while (d >= N || d === 0n)
@@ -128,7 +127,7 @@ export function sm2Sign(message, privateKeyHex, publicKeyHex) {
 
   let r, s
   while (true) {
-    const kBytes = getRandomBytes(32)
+    const kBytes = crypto.getRandomValues(new Uint8Array(32))
     const k = BigInt('0x' + bytesToHex(kBytes)) % N
     if (k === 0n) continue
 
