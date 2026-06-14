@@ -1,8 +1,8 @@
 <template>
   <div class="home">
     <section class="hero">
-      <h1>密盾 SMC</h1>
-      <p class="subtitle">轻量化 · 可视化 · 免部署 — 国密综合应用平台</p>
+      <h1>国密算法综合应用平台</h1>
+      <p class="subtitle">轻量化 · 可视化 · 免部署 — SM2 / SM3 / SM4</p>
       <p class="desc">SM4-CBC 文件加密 | SM2 数字签名验签 | SM3 哈希完整性校验。适配 Windows / 麒麟 / 统信 UOS，开放 API 供二次开发。</p>
       <p style="margin-top:1rem"><router-link to="/guide" class="guide-link">📖 新手指南：每个模块怎么用？点击查看 →</router-link></p>
     </section>
