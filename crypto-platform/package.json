@@ -1,0 +1,55 @@
+{
+  "name": "smx-platform",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "vite": "^6.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "author": "广州商学院 罗俊涛",
+  "description": "国产密码一体化教学与验证平台 - SM2/SM3/SM4国密算法交互式学习工具",
+  "build": {
+    "appId": "com.smx.platform",
+    "productName": "国产密码一体化教学与验证平台",
+    "copyright": "广州商学院 罗俊涛",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "main.cjs"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "sign": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "国产密码一体化教学与验证平台"
+    }
+  }
+}
