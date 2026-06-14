@@ -1,7 +1,7 @@
 <template>
   <div class="tool-panel">
     <h3>SM4 加密 / 解密</h3>
-    <p class="tool-desc">128 位分组密码，ECB 模式，PKCS7 填充</p>
+    <p class="tool-desc">128 位分组密码，CBC 模式，PKCS7 填充</p>
 
     <div class="mode-tabs">
       <button :class="{ active: mode === 'encrypt' }" @click="mode = 'encrypt'">🔒 加密</button>
@@ -41,7 +41,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { sm4EncryptECBHex, sm4DecryptECBHex } from '../../utils/sm4.js'
+import { sm4EncryptCBCFromHex, sm4DecryptCBCToText } from '../../utils/sm4.js'
 
 const mode = ref('encrypt')
 const key = ref('0123456789abcdeffedcba9876543210')
@@ -63,9 +63,9 @@ async function process() {
   loading.value = true
   try {
     if (mode.value === 'encrypt') {
-      result.value = sm4EncryptECBHex(plaintext.value, key.value)
+      result.value = sm4EncryptCBCFromHex(plaintext.value, key.value)
     } else {
-      result.value = sm4DecryptECBHex(ciphertext.value, key.value)
+      result.value = sm4DecryptCBCToText(ciphertext.value, key.value)
     }
   } catch (e) {
     error.value = e.message
