@@ -1,5 +1,5 @@
 // 密盾 SMC SDK v2 — SM4-CBC + SM3密钥派生 + SM2签名/验签 + 审计日志
-import { sm4EncryptCBC, sm4DecryptCBC, hexToBytes, bytesToHex } from './sm4.js'
+import { sm4EncryptCBC, sm4DecryptCBC, hexToBytes, bytesToHex, getRandomBytes } from './sm4.js'
 import { sm3Hash, sm3HashHex, sm3HMACHex } from './sm3.js'
 import { sm2GenerateKeyPair, sm2Sign, sm2Verify } from './sm2.js'
 import { encryptFile, decryptFile, extractSalt, downloadFile, packFolder, unpackFolder } from './vault.js'
@@ -16,7 +16,7 @@ function deriveKeyHex(password, salt = 'smc-salt') {
 }
 
 function randomKey() {
-  const b = crypto.getRandomValues(new Uint8Array(16))
+  const b = getRandomBytes(16)
   return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('')
 }
 

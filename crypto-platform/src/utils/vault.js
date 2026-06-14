@@ -1,6 +1,6 @@
 // 加密文件容器 — SM4-CBC + SM3 完整性校验
 // 格式: MAGIC(4) + Version(1) + SaltLen(1) + Salt + Iter(2) + NameLen(2) + Name + Hash(32) [→ SM4-CBC 加密]
-import { sm4EncryptCBC, sm4DecryptCBC, hexToBytes } from './sm4.js'
+import { sm4EncryptCBC, sm4DecryptCBC, hexToBytes, getRandomBytes } from './sm4.js'
 import { sm3Hash } from './sm3.js'
 
 const MAGIC = new Uint8Array([0x53, 0x4D, 0x43, 0x42]) // "SMCB" v2
@@ -16,7 +16,7 @@ function concat(...arrays) {
 }
 
 function randomSalt() {
-  return crypto.getRandomValues(new Uint8Array(8))
+  return getRandomBytes(8)
 }
 
 export function encryptFile(fileBytes, fileName, keyBytes, salt = null) {
@@ -73,6 +73,7 @@ export function decryptFile(containerBytes, keyBytes) {
 
   const actualHash = sm3Hash(fileBytes)
   const hashMatch = storedHash.every((b, i) => b === actualHash[i])
+  if (!hashMatch) throw new Error('完整性校验失败：文件可能已被篡改或密码错误')
 
   return { fileName, fileBytes, hashMatch, salt, iterations }
 }

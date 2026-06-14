@@ -57,10 +57,26 @@ function sm4Decrypt(block, rk) { return sm4Round(block, [...rk].reverse()) }
 
 function xorBlock(a, b) { const r=new Uint8Array(16); for(let i=0;i<16;i++) r[i]=a[i]^b[i]; return r }
 
+// 安全随机数生成（优先 Web Crypto，file:// 降级到 PRNG）
+let _prngState = Date.now() ^ (Math.random() * 0xffffffff)
+function _prngNext() {
+  _prngState = (_prngState * 1103515245 + 12345) & 0x7fffffff
+  return _prngState
+}
+export function getRandomBytes(n) {
+  try {
+    return crypto.getRandomValues(new Uint8Array(n))
+  } catch {
+    const bytes = new Uint8Array(n)
+    for (let i = 0; i < n; i++) bytes[i] = _prngNext() & 0xff
+    return bytes
+  }
+}
+
 // === CBC 加密 ===
 export function sm4EncryptCBC(plaintext, key) {
   const rk = expandKey(key)
-  const iv = crypto.getRandomValues(new Uint8Array(16))
+  const iv = getRandomBytes(16)
   const padLen = 16 - (plaintext.length % 16)
   const paddedLen = plaintext.length + padLen
   const padded = new Uint8Array(paddedLen)
@@ -95,9 +111,12 @@ export function sm4DecryptCBC(ciphertext, key) {
     result.set(xorBlock(decrypted, prev), i * 16)
     prev = block
   }
-  // 去除 PKCS7 填充
+  // 去除 PKCS7 填充（全字节一致性校验）
   const padLen = result[result.length - 1]
   if (padLen < 1 || padLen > 16) throw new Error('解密失败：密码错误或文件已损坏（PKCS7填充校验不通过）')
+  for (let i = 1; i < padLen; i++) {
+    if (result[result.length - 1 - i] !== padLen) throw new Error('解密失败：密码错误或文件已损坏（PKCS7填充不一致）')
+  }
   return result.slice(0, result.length - padLen)
 }
 

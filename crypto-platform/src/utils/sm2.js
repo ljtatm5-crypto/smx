@@ -1,5 +1,7 @@
 // SM2 椭圆曲线公钥密码算法 (GB/T 32918-2016)
 // 基于 256-bit 素数域上的椭圆曲线: y² = x³ + ax + b
+import { sm3Hash } from './sm3.js'
+import { getRandomBytes } from './sm4.js'
 
 // 曲线参数
 const P = 0xfffffffeffffffffffffffffffffffffffffffff00000000ffffffffffffffffn
@@ -101,8 +103,7 @@ const G = new ECPoint(GX, GY)
 export function sm2GenerateKeyPair() {
   let d
   do {
-    const bytes = new Uint8Array(32)
-    crypto.getRandomValues(bytes)
+    const bytes = getRandomBytes(32)
     const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
     d = BigInt('0x' + hex)
   } while (d >= N || d === 0n)
@@ -122,13 +123,12 @@ export function sm2Sign(message, privateKeyHex, publicKeyHex) {
   const ZA = computeZA(publicKeyHex)
 
   // e = SM3(ZA || M)
-  const eHash = sm3HashForSM2(ZA, msgBytes)
+  const eHash = hashZAandMsg(ZA, msgBytes)
   const e = BigInt('0x' + bytesToHex(eHash))
 
   let r, s
   while (true) {
-    const kBytes = new Uint8Array(32)
-    crypto.getRandomValues(kBytes)
+    const kBytes = getRandomBytes(32)
     const k = BigInt('0x' + bytesToHex(kBytes)) % N
     if (k === 0n) continue
 
@@ -153,7 +153,7 @@ export function sm2Verify(message, signature, publicKeyHex) {
 
   const msgBytes = typeof message === 'string' ? new TextEncoder().encode(message) : new Uint8Array(message)
   const ZA = computeZA(publicKeyHex)
-  const eHash = sm3HashForSM2(ZA, msgBytes)
+  const eHash = hashZAandMsg(ZA, msgBytes)
   const e = BigInt('0x' + bytesToHex(eHash))
 
   const t = mod(r + s, N)
@@ -175,70 +175,18 @@ function computeZA(publicKeyHex) {
   const gxHex = '32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7'
   const gyHex = 'BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0'
 
-  // Parse public key (skip 04 prefix)
   const pubX = publicKeyHex.slice(2, 66)
   const pubY = publicKeyHex.slice(66, 130)
 
   const zaInput = hexToBytes(entla + id + aHex + bHex + gxHex + gyHex + pubX + pubY)
-  return sm3HashForSM2Bytes(zaInput)
+  return sm3Hash(zaInput)
 }
 
-function sm3HashForSM2(ZA, message) {
-  const zaBytes = hexToBytes(bytesToHex(ZA))
-  const combined = new Uint8Array(zaBytes.length + message.length)
-  combined.set(zaBytes)
-  combined.set(message, zaBytes.length)
-  return sm3HashForSM2Bytes(combined)
-}
-
-function sm3HashForSM2Bytes(data) {
-  const msgBytes = data
-  const IV = [0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600,
-               0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e]
-  function _rotl(x, n) { return ((x << n) | (x >>> (32 - n))) >>> 0 }
-  function _p0(x) { return x ^ _rotl(x, 9) ^ _rotl(x, 17) }
-  function _p1(x) { return x ^ _rotl(x, 15) ^ _rotl(x, 23) }
-  function _ff0(x, y, z) { return x ^ y ^ z }
-  function _ff1(x, y, z) { return (x & y) | (x & z) | (y & z) }
-  function _gg0(x, y, z) { return x ^ y ^ z }
-  function _gg1(x, y, z) { return (x & y) | (~x & z) }
-
-  const len = msgBytes.length * 8
-  const padLen = (448 - (len + 1) % 512 + 512) % 512
-  const totalBytes = (len + 1 + padLen + 64) / 8
-  const padded = new Uint8Array(totalBytes)
-  padded.set(msgBytes)
-  padded[msgBytes.length] = 0x80
-  const view = new DataView(padded.buffer)
-  view.setUint32(totalBytes - 4, len & 0xffffffff)
-  view.setUint32(totalBytes - 8, Math.floor(len / 0x100000000))
-
-  const V = [...IV]
-  const W = new Uint32Array(68), W1 = new Uint32Array(64)
-
-  for (let block = 0; block < totalBytes; block += 64) {
-    for (let i = 0; i < 16; i++) W[i] = view.getUint32(block + i * 4)
-    for (let i = 16; i < 68; i++)
-      W[i] = _p1(W[i - 16] ^ W[i - 9] ^ _rotl(W[i - 3], 15)) ^ _rotl(W[i - 13], 7) ^ W[i - 6]
-    for (let i = 0; i < 64; i++) W1[i] = W[i] ^ W[i + 4]
-
-    let A = V[0], B = V[1], C = V[2], D = V[3], E = V[4], F = V[5], G = V[6], H = V[7]
-    for (let j = 0; j < 64; j++) {
-      const Tj = j < 16 ? 0x79cc4519 : 0x7a879d8a
-      const SS1 = _rotl(_rotl(A, 12) + E + _rotl(Tj, j % 32), 7)
-      const SS2 = SS1 ^ _rotl(A, 12)
-      const TT1 = j < 16 ? _ff0(A, B, C) + D + SS2 + W1[j] : _ff1(A, B, C) + D + SS2 + W1[j]
-      const TT2 = j < 16 ? _gg0(E, F, G) + H + SS1 + W[j] : _gg1(E, F, G) + H + SS1 + W[j]
-      D = C; C = _rotl(B, 9); B = A; A = TT1
-      H = G; G = _rotl(F, 19); F = E; E = _p0(TT2)
-    }
-    V[0] ^= A; V[1] ^= B; V[2] ^= C; V[3] ^= D
-    V[4] ^= E; V[5] ^= F; V[6] ^= G; V[7] ^= H
-  }
-  const hash = new Uint8Array(32)
-  const dv = new DataView(hash.buffer)
-  for (let i = 0; i < 8; i++) dv.setUint32(i * 4, V[i])
-  return hash
+function hashZAandMsg(ZA, message) {
+  const combined = new Uint8Array(ZA.length + message.length)
+  combined.set(ZA)
+  combined.set(message, ZA.length)
+  return sm3Hash(combined)
 }
 
 function parsePublicKey(pubHex) {
@@ -262,4 +210,4 @@ function hexToBytes(hex) {
   return bytes
 }
 
-export { computeZA, sm3HashForSM2Bytes }
+export { computeZA }
