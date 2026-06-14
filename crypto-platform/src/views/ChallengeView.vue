@@ -22,7 +22,7 @@
       <div class="challenge-card" :class="{ solved: c2 }">
         <div class="ch-header"><span class="ch-num">{{ c2 ? '✅' : '2' }}</span><span class="ch-badge">SM3 哈希寻踪</span></div>
         <div class="ch-body">
-          <p><strong>任务：</strong>原文藏在页面源代码的 HTML 注释中（右键→查看源代码，搜索 <code>secret</code>）。找到后用 <router-link to="/hash">🔍 哈希校验</router-link> 算它的 SM3 哈希值，提交哈希值。</p>
+          <p><strong>任务：</strong>原文藏在页面源代码的 HTML 注释中（F12 打开开发者工具，搜索 <code>secret</code>）。找到后用 <router-link to="/hash">🔍 哈希校验</router-link> 算它的 SM3 哈希值，提交哈希值。</p>
           <p><strong>知识点：</strong>SM3 是单向哈希算法，任何数据都有唯一的 SM3 指纹。用哈希工具验证你找到的原文，提交哈希值证明你找到了。</p>
           <div class="ch-answer"><input v-model="a2" placeholder="flag{...}" /><button v-if="!c2" @click="checkL2">提交</button><button v-else class="btn-redo" @click="resetL2">🔄 重做</button></div>
           <div v-if="c2Msg" class="ch-msg" :class="c2 ? 'success' : 'fail'">{{ c2Msg }}</div>
