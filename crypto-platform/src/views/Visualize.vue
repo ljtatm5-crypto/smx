@@ -103,7 +103,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 const algo = ref('sm4')
 
 // ==================== SM4 ====================
-const sm4Plain = ref('0123456789abcdeffedcba9876543210')
+const sm4Plain = ref('6d6573736167652064696765737473')  // "message digests" 的 ASCII hex
 const sm4Key = ref('0123456789abcdeffedcba9876543210')
 const sm4Round = ref(0); const sm4Playing = ref(false); const sm4Speed = ref(4)
 const sm4Canvas = ref(null); let sm4Timer = null
