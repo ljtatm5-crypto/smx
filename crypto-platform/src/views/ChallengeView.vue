@@ -14,7 +14,7 @@
             <div><label>📨 加密文件</label><a :href="encUrl" download class="btn-sm" style="text-decoration:none;display:inline-block">⬇️ 下载 challenge.enc</a></div>
           </div>
           <p class="hint">💡 去 <router-link to="/file">📁 文件加密</router-link> → 切「🔓 解密」→ 拖入下载的 .enc → 输入密钥 → 解密得到 flag → 回来提交</p>
-          <div class="ch-answer"><input v-model="a1" placeholder="flag{...}" :disabled="c1" /><button @click="submitL1">提交</button></div>
+          <div class="ch-answer"><input v-model="a1" placeholder="flag{...}" /><button v-if="!c1" @click="submitL1">提交</button><button v-else class="btn-redo" @click="resetL1">🔄 重做</button></div>
           <div v-if="c1" class="ch-msg success">✅ SM4 解密通关！对称加密：同密钥加密解密。</div>
         </div>
       </div>
@@ -24,7 +24,7 @@
         <div class="ch-body">
           <p><strong>任务：</strong>原文藏在页面源代码的 HTML 注释中（右键→查看源代码，搜索 <code>secret</code>）。找到后用 <router-link to="/hash">🔍 哈希校验</router-link> 算它的 SM3 哈希值，提交哈希值。</p>
           <p><strong>知识点：</strong>SM3 是单向哈希算法，任何数据都有唯一的 SM3 指纹。用哈希工具验证你找到的原文，提交哈希值证明你找到了。</p>
-          <div class="ch-answer"><input v-model="a2" placeholder="flag{...}" :disabled="c2" /><button @click="checkL2">提交</button></div>
+          <div class="ch-answer"><input v-model="a2" placeholder="flag{...}" /><button v-if="!c2" @click="checkL2">提交</button><button v-else class="btn-redo" @click="resetL2">🔄 重做</button></div>
           <div v-if="c2Msg" class="ch-msg" :class="c2 ? 'success' : 'fail'">{{ c2Msg }}</div>
         </div>
       </div>
@@ -34,7 +34,7 @@
         <div class="ch-body">
           <p><strong>任务：</strong>去 <router-link to="/sign">✍️ 数据验签</router-link> 页生成密钥对，对消息 <code>clxzjy</code> 签名，提交签名 r 值的前 16 位。</p>
           <p><strong>知识点：</strong>SM2 是基于椭圆曲线的数字签名算法。私钥签名、公钥验签。签名值 (r,s) 各 64 位 hex，r 是椭圆曲线点的 x 坐标计算结果。</p>
-          <div class="ch-answer"><input v-model="a3" placeholder="r值前16位..." :disabled="c3" /><button @click="submitL3">提交</button></div>
+          <div class="ch-answer"><input v-model="a3" placeholder="r值前16位..." /><button v-if="!c3" @click="submitL3">提交</button><button v-else class="btn-redo" @click="resetL3">🔄 重做</button></div>
           <div v-if="c3" class="ch-msg success">✅ SM2 签名通关！私钥签名，公钥验签——非对称密码的核心。</div>
         </div>
       </div>
@@ -69,6 +69,7 @@ function submitL1() {
     persist()
   }
 }
+function resetL1() { c1.value = false; a1.value = ''; persist() }
 function submitL3() {
   const v = a3.value.trim()
   if (v.length === 16 && /^[0-9a-fA-F]+$/.test(v)) {
@@ -76,6 +77,7 @@ function submitL3() {
     persist()
   }
 }
+function resetL3() { c3.value = false; a3.value = ''; persist() }
 
 onMounted(() => { console.log('🔍 第二关提示：原文藏在 F12 → Elements 里搜 secret，或在源代码中找注释') })
 onBeforeUnmount(() => persist())
@@ -90,5 +92,6 @@ function checkL2() {
     c2Msg.value = '❌ 不对。去 SM3 工具输入找到的原文，把哈希值拼成 flag{哈希} 提交。'
   }
 }
+function resetL2() { c2.value = false; a2.value = ''; c2Msg.value = ''; persist() }
 </script>
 <!-- secret:flag{SM3哈希校验} -->
