@@ -209,4 +209,98 @@ function hexToBytes(hex) {
   return bytes
 }
 
+// ===== SM2 公钥加密 (GB/T 32918.4) =====
+// 输出 C1(65字节)+C3(32字节)+C2 → hex 字符串
+function kdf(z, klen) {
+  const ct = new Uint8Array(4)
+  const hashes = []
+  for (let i = 0; i * 32 < klen; i++) {
+    ct[0] = (i + 1) >>> 24; ct[1] = ((i + 1) >>> 16) & 0xff
+    ct[2] = ((i + 1) >>> 8) & 0xff; ct[3] = (i + 1) & 0xff
+    const input = new Uint8Array(z.length + 4)
+    input.set(z); input.set(ct, z.length)
+    hashes.push(sm3Hash(input))
+  }
+  const result = new Uint8Array(hashes.length * 32)
+  hashes.forEach((h, i) => result.set(h, i * 32))
+  return result.slice(0, klen)
+}
+
+function pointToBytes(p) {
+  const x = bytesToHex32(p.x); const y = bytesToHex32(p.y)
+  return hexToBytes('04' + x + y) // 65 bytes
+}
+
+export function sm2Encrypt(message, publicKeyHex) {
+  const pubPoint = parsePublicKey(publicKeyHex)
+  if (!pubPoint || pubPoint.isInfinity) throw new Error('无效公钥')
+  const msgBytes = typeof message === 'string' ? new TextEncoder().encode(message) : new Uint8Array(message)
+
+  let k, C1, S
+  do {
+    const kBytes = getRandomBytes(32)
+    k = BigInt('0x' + bytesToHex(kBytes)) % N
+  } while (k === 0n)
+  C1 = pointMul(k, G)
+  S = pointMul(k, pubPoint)
+  if (S.isInfinity) throw new Error('加密失败：无穷远点')
+
+  const c1Bytes = pointToBytes(C1)
+  const sx = bytesToHex32(S.x); const sy = bytesToHex32(S.y)
+  const sBytes = hexToBytes(sx + sy)
+
+  const t = kdf(sBytes, msgBytes.length)
+  const C2 = new Uint8Array(msgBytes.length)
+  for (let i = 0; i < msgBytes.length; i++) C2[i] = msgBytes[i] ^ t[i]
+
+  // C3 = SM3(S.x || M || S.y)
+  const c3Input = new Uint8Array(sBytes.length + msgBytes.length)
+  c3Input.set(sBytes); c3Input.set(msgBytes, sBytes.length)
+  const C3 = sm3Hash(c3Input)
+
+  // 输出: C1(hex) + C3(hex) + C2(hex)
+  return bytesToHex(c1Bytes) + bytesToHex(C3) + bytesToHex(C2)
+}
+
+// ===== SM2 私钥解密 =====
+export function sm2Decrypt(cipherHex, privateKeyHex) {
+  const d = BigInt('0x' + privateKeyHex)
+  // C1: 65字节 = 130 hex, C3: 32字节 = 64 hex
+  if (cipherHex.length < 130 + 64) throw new Error('密文格式错误')
+  const c1Hex = cipherHex.slice(0, 130)
+  const c3Hex = cipherHex.slice(130, 194)
+  const c2Hex = cipherHex.slice(194)
+
+  const C1 = parsePublicKey(c1Hex)
+  if (!C1 || C1.isInfinity) throw new Error('密文C1解析失败')
+
+  const S = pointMul(d, C1)
+  if (S.isInfinity) throw new Error('解密失败：无穷远点')
+
+  const C2 = hexToBytes(c2Hex)
+  const sx = bytesToHex32(S.x); const sy = bytesToHex32(S.y)
+  const sBytes = hexToBytes(sx + sy)
+
+  const t = kdf(sBytes, C2.length)
+  const M = new Uint8Array(C2.length)
+  for (let i = 0; i < C2.length; i++) M[i] = C2[i] ^ t[i]
+
+  // 验证 C3
+  const c3Input = new Uint8Array(sBytes.length + M.length)
+  c3Input.set(sBytes); c3Input.set(M, sBytes.length)
+  const u = sm3Hash(c3Input)
+  const C3 = hexToBytes(c3Hex)
+  if (!u.every((b, i) => b === C3[i])) throw new Error('SM2 解密验证失败：C3 校验不通过')
+
+  return M
+}
+
+export function sm2EncryptToHex(message, publicKeyHex) {
+  return sm2Encrypt(message, publicKeyHex)
+}
+
+export function sm2DecryptToText(cipherHex, privateKeyHex) {
+  return new TextDecoder().decode(sm2Decrypt(cipherHex, privateKeyHex))
+}
+
 export { computeZA }

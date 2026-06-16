@@ -6,8 +6,7 @@
         <router-link to="/file">📁 文件加密</router-link>
         <router-link to="/sign">✍️ 数据验签</router-link>
         <router-link to="/hash">🔍 哈希校验</router-link>
-        <router-link to="/visual">📐 可视化</router-link>
-        <router-link to="/challenge">🎮 闯关</router-link>
+        <router-link to="/learn">🎓 国密教学平台</router-link>
         <router-link to="/sdk">🔌 API</router-link>
         <router-link to="/audit">📋 日志</router-link>
       </div>

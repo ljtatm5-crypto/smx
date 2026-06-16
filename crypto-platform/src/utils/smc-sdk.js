@@ -1,7 +1,7 @@
 // 密盾 SMC SDK v2 — SM4-CBC + SM3密钥派生 + SM2签名/验签 + 审计日志
 import { sm4EncryptCBC, sm4DecryptCBC, hexToBytes, bytesToHex } from './sm4.js'
 import { sm3Hash, sm3HashHex, sm3HMACHex } from './sm3.js'
-import { sm2GenerateKeyPair, sm2Sign, sm2Verify } from './sm2.js'
+import { sm2GenerateKeyPair, sm2Sign, sm2Verify, sm2Encrypt, sm2Decrypt, sm2EncryptToHex, sm2DecryptToText } from './sm2.js'
 import { encryptFile, decryptFile, extractSalt, downloadFile, packFolder, unpackFolder } from './vault.js'
 import { auditLog, getAuditLogs, verifyLogChain, exportAuditReport } from './audit.js'
 import { keyPool } from './keycache.js'
@@ -118,6 +118,24 @@ const SMC = {
     const ok = sm2Verify(message, signature, publicKey)
     auditLog('SM2_VERIFY', { result: ok })
     return ok
+  },
+
+  // === SM2 公钥加密/私钥解密 (GB/T 32918.4) — 用于包裹 SM4 密钥 ===
+  encryptWithPublicKey(message, publicKeyHex) {
+    auditLog('SM2_ENCRYPT', {})
+    return sm2EncryptToHex(message, publicKeyHex)
+  },
+  decryptWithPrivateKey(cipherHex, privateKeyHex) {
+    auditLog('SM2_DECRYPT', {})
+    return sm2DecryptToText(cipherHex, privateKeyHex)
+  },
+  encryptBytesWithPublicKey(bytes, publicKeyHex) {
+    auditLog('SM2_ENCRYPT', {})
+    return sm2Encrypt(bytes, publicKeyHex)
+  },
+  decryptBytesWithPrivateKey(cipherHex, privateKeyHex) {
+    auditLog('SM2_DECRYPT', {})
+    return sm2Decrypt(cipherHex, privateKeyHex)
   },
 
   // === SM3 哈希 ===

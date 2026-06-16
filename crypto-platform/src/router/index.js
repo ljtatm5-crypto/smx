@@ -7,6 +7,7 @@ export default createRouter({
     { path: '/file', name: 'FileEncrypt', component: () => import('../views/FileEncrypt.vue') },
     { path: '/sign', name: 'DataSign', component: () => import('../views/DataSign.vue') },
     { path: '/hash', name: 'HashCheck', component: () => import('../views/HashCheck.vue') },
+    { path: '/learn', name: 'Learn', component: () => import('../views/LearnView.vue') },
     { path: '/visual', name: 'Visualize', component: () => import('../views/Visualize.vue') },
     { path: '/challenge', name: 'Challenge', component: () => import('../views/ChallengeView.vue') },
     { path: '/sdk', name: 'SDK', component: () => import('../views/SDKView.vue') },
