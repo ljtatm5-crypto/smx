@@ -66,7 +66,7 @@ function initDB(){
 // ==================== Express ====================
 async function startServer(){
   _SQL=await initSqlJs();initDB()
-  const PORT=process.env.API_PORT||3456
+  const PORT=process.env.PORT||process.env.API_PORT||3456
   const app=express();app.use(cors());app.use(express.json({limit:'1mb'}))
   const uploadFile=multer({storage:multer.memoryStorage(),limits:{fileSize:500*1024*1024}}).single('file')
   const STORAGE_DIR=()=>{const d=path.join(getDataDir(),'storage');try{fs.mkdirSync(d,{recursive:true})}catch{};return d}
