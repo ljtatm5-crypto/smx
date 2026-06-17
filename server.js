@@ -51,7 +51,7 @@ function kdf(z,klen){const ct=new Uint8Array(4);const hs=[];for(let i=0;i*32<kle
 function sm2Encrypt(msg,pkH){const pp=parsePK(pkH);if(!pp||pp.isInfinity)throw new Error('invalid key');const mb=typeof msg==='string'?new TextEncoder().encode(msg):new Uint8Array(msg);let k,C1,S;do{k=BigInt('0x'+bytesToHex(crypto.randomBytes(32)))%N}while(k===0n);C1=pointMul(k,G);S=pointMul(k,pp);if(S.isInfinity)throw new Error('encrypt fail');const c1b=hexToBytes('04'+bytesToHex32(C1.x)+bytesToHex32(C1.y));const sb=hexToBytes(bytesToHex32(S.x)+bytesToHex32(S.y));const t=kdf(sb,mb.length);const C2=new Uint8Array(mb.length);for(let i=0;i<mb.length;i++)C2[i]=mb[i]^t[i];const c3i=new Uint8Array(sb.length+mb.length);c3i.set(sb);c3i.set(mb,sb.length);return bytesToHex(c1b)+bytesToHex(sm3Hash(c3i))+bytesToHex(C2)}
 function sm2Decrypt(ch,privH){const d=BigInt('0x'+privH);if(ch.length<194)throw new Error('short');const C1=parsePK(ch.slice(0,130));const C3=hexToBytes(ch.slice(130,194));const C2=hexToBytes(ch.slice(194));if(!C1||C1.isInfinity)throw new Error('C1 fail');const S=pointMul(d,C1);if(S.isInfinity)throw new Error('dec fail');const sb=hexToBytes(bytesToHex32(S.x)+bytesToHex32(S.y));const t=kdf(sb,C2.length);const M=new Uint8Array(C2.length);for(let i=0;i<C2.length;i++)M[i]=C2[i]^t[i];const ui=new Uint8Array(sb.length+M.length);ui.set(sb);ui.set(M,sb.length);if(!sm3Hash(ui).every((b,i)=>b===C3[i]))throw new Error('C3 fail');return M}
 
-// ==================== SQLite ====================
+// ==================== SQLite 数据库 ====================
 let db, _SQL
 function getDataDir(){const d=path.join(process.env.APPDATA||path.join(process.env.HOME,'.local/share'),'smc-platform');try{fs.mkdirSync(d,{recursive:true})}catch{};return d}
 function saveDB(){try{fs.writeFileSync(path.join(getDataDir(),'smc.db'),db.export())}catch{}}
@@ -90,7 +90,7 @@ async function startServer(){
   app.post('/api/sm2/encrypt',auth,(req,res)=>{const{m,pk}=req.body;try{res.json({c:sm2Encrypt(m,pk)})}catch(e){res.status(400).json({error:e.message})}})
   app.post('/api/sm2/decrypt',auth,(req,res)=>{const{c,sk}=req.body;try{res.json({p:new TextDecoder().decode(sm2Decrypt(c,sk))})}catch(e){res.status(400).json({error:e.message})}})
 
-  // ===== =====
+  // ===== 用户系统 (SQLite) =====
   const sessions={}
   app.post('/api/user/register',(req,res)=>{
     const{username,password}=req.body
@@ -130,13 +130,14 @@ async function startServer(){
   app.post('/api/user/logout',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');delete sessions[token];res.json({ok:true})})
   function userAuth(req,res,next){const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'});req.user=s.username;next()}
 
-  // ===== =====
+  // ===== 文件 (SQLite) =====
   app.post('/api/files/upload',userAuth,(req,res)=>{uploadFile(req,res,function(err){if(err)return res.status(err.code==='LIMIT_FILE_SIZE'?413:500).json({error:err.message});try{const{name,originalName,sm3Hash,pubKey,signature,encryptedKey}=req.body;if(!req.file||!req.file.buffer)return res.status(400).json({error:'no file'});if(!name||!pubKey||!sm3Hash)return res.status(400).json({error:'missing fields'});const id=fileUid();fs.writeFileSync(path.join(STORAGE_DIR(),id+'.enc'),req.file.buffer);let sig=null;try{sig=typeof signature==='string'?JSON.parse(signature):signature}catch{};db.run('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)',[id,req.user,name,originalName||name,req.file.size,sm3Hash,pubKey,sig?JSON.stringify(sig):'',encryptedKey||'',new Date().toISOString()]);saveDB();if(req.body.pubKey){const ur=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);if(!ur[0].values[0][0]){db.run('UPDATE users SET pub_key=? WHERE username=?',[pubKey,req.user]);saveDB()}}res.json({id,name,size:req.file.size})}catch(e){res.status(500).json({error:e.message})}})})
   app.get('/api/files/list',userAuth,(req,res)=>{
     const my=db.exec('SELECT * FROM files WHERE owner=? ORDER BY uploaded_at DESC',[req.user])
     const myFiles=(my[0]||{values:[]}).values.map(r=>({id:r[0],owner:req.user,name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:true}))
     const sr=db.exec("SELECT f.*,s.username as shared_to FROM files f JOIN shares s ON f.id=s.file_id WHERE s.username=? ORDER BY f.uploaded_at DESC",[req.user])
     const sharedFiles=(sr[0]||{values:[]}).values.map(r=>({id:r[0],owner:r[1],name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:false,sharedBy:r[1]}))
+    // get authorized pubKeys for my files
     const authMap={}
     for(const f of myFiles){const ar=db.exec('SELECT username FROM shares WHERE file_id=?',[f.id]);authMap[f.id]=(ar[0]||{values:[]}).values.map(v=>{const parts=v[0].split(':');return{pubKey:parts[0],signature:parts[1]||''}})}
     res.json({my:myFiles.map(f=>({...f,authorizedUsers:authMap[f.id]||[]})),shared:sharedFiles.map(f=>({...f,authorizedUsers:[]}))})
@@ -158,6 +159,7 @@ async function startServer(){
     if(!targetPubKey||!grantSignature)return res.status(400).json({error:'missing targetPubKey or grantSignature'})
     const fr=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
     if(!fr.length||!fr[0].values.length)return res.status(404).json({error:'not found'})
+    // Store: pubKey + signature in shares table (use pubKey as username column for simplicity)
     const sr=db.exec('SELECT * FROM shares WHERE file_id=? AND username=?',[req.params.id,targetPubKey])
     if(sr.length&&sr[0].values.length)return res.status(400).json({error:'already shared'})
     let sigStr='';try{sigStr=typeof grantSignature==='string'?grantSignature:JSON.stringify(grantSignature)}catch{}
