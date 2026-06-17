@@ -1,0 +1,15 @@
+{
+  "name": "smc-transit",
+  "version": "1.0.0",
+  "description": "SMC 中转服务层 — 零知识加密文件网盘",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "multer": "^2.2.0",
+    "sql.js": "^1.14.0"
+  }
+}
