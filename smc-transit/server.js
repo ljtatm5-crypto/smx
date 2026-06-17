@@ -182,4 +182,5 @@ async function startServer(){
   app.listen(PORT,'0.0.0.0',()=>console.log('[SMC SQLite] http://0.0.0.0:'+PORT))
 }
 
+startServer()
 module.exports={startServer}
