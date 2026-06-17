@@ -173,7 +173,8 @@ async function startServer(){
     db.run('DELETE FROM shares WHERE file_id=?',[req.params.id]);db.run('DELETE FROM files WHERE id=?',[req.params.id]);saveDB();res.json({ok:true})
   })
 
-  app.use('/',(req,res,next)=>{if(req.path==='/'||req.path==='')return res.json({service:'SMC Storage',version:'1.0.0',docs:'https://smc-storage.onrender.com/api/health'});next()})
+  app.get('/hello',(req,res)=>{res.json({ok:true,msg:'hello'})})
+  app.get('/',(req,res)=>{res.json({service:'SMC Storage',version:'1.0.0'})})
   app.get('/api/health',(req,res)=>{
     const r=db.exec('SELECT COUNT(*) FROM files')
     const count=r[0]?r[0].values[0][0]:0
