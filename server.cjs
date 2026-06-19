@@ -248,10 +248,7 @@ async function startServer(){
   app.get('/api/files/list',userAuth,(req,res)=>{
     const my=db.exec('SELECT * FROM files WHERE owner=? ORDER BY uploaded_at DESC',[req.user])
     const myFiles=(my[0]||{values:[]}).values.map(r=>({id:r[0],owner:req.user,name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:true}))
-    // Get user's pubKey for share matching
-    const myPubUr=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user])
-    const myPubKey=myPubUr.length&&myPubUr[0].values.length ? myPubUr[0].values[0][0] : ''
-    const sr=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE s.username=? ORDER BY f.uploaded_at DESC",[myPubKey])
+    const sr=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE s.username=? ORDER BY f.uploaded_at DESC",[req.user])
     const sharedFiles=(sr[0]||{values:[]}).values.map(r=>({id:r[0],owner:r[1],name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:false,sharedBy:r[1]}))
     const authMap={}
     for(const f of myFiles){const ar=db.exec('SELECT username FROM shares WHERE file_id=?',[f.id]);authMap[f.id]=(ar[0]||{values:[]}).values.map(v=>({username:v[0]}))}
@@ -274,10 +271,13 @@ async function startServer(){
     if(!targetPubKey||!grantSignature)return res.status(400).json({error:'missing targetPubKey or grantSignature'})
     const fr=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
     if(!fr.length||!fr[0].values.length)return res.status(404).json({error:'not found'})
-    // Store share by pubKey (recipient matched by their own pubKey later)
-    const sr=db.exec('SELECT * FROM shares WHERE file_id=? AND username=?',[req.params.id,targetPubKey])
+    // Look up target username from pubKey
+    const ur=db.exec('SELECT username FROM users WHERE pub_key=?',[targetPubKey])
+    if(!ur.length||!ur[0].values.length)return res.status(404).json({error:'target user not found, ask them to generate SM2 key first'})
+    const targetUser=ur[0].values[0][0]
+    const sr=db.exec('SELECT * FROM shares WHERE file_id=? AND username=?',[req.params.id,targetUser])
     if(sr.length&&sr[0].values.length)return res.status(400).json({error:'already shared'})
-    db.run('INSERT INTO shares VALUES(?,?,?)',[req.params.id,targetPubKey,new Date().toISOString()])
+    db.run('INSERT INTO shares VALUES(?,?,?)',[req.params.id,targetUser,new Date().toISOString()])
     saveDB();res.json({ok:true})
   })
   app.delete('/api/files/:id',userAuth,(req,res)=>{
