@@ -93,8 +93,7 @@ th{background:#fafafa;font-weight:600;color:#555}tr:hover{background:#f8f9ff}
 <div id="loginPage" class="login-box">
 <h1>SMC Admin Panel</h1>
 <input id="adminUser" placeholder="管理员用户名" autocomplete="off"><input id="adminPwd" type="password" placeholder="管理员密码">
-<input id="adminKey" placeholder="SM2私钥 (可选，留空则密码登录)" style="font-size:11px" autocomplete="off">
-<button onclick="doAdminLogin()">SM2 签名登录</button><div id="loginErr" class="err"></div>
+<button onclick="doAdminLogin()">管理员登录</button><div id="loginErr" class="err"></div>
 </div>
 <div id="app" class="hidden" style="display:none;display:flex;width:100%">
 <div class="sidebar">
@@ -110,47 +109,7 @@ th{background:#fafafa;font-weight:600;color:#555}tr:hover{background:#f8f9ff}
 <script>
 var token='';
 function api(path,method,body){var opts={method:method||'GET',headers:{Authorization:'Bearer '+token}};if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}return fetch(path,opts).then(r=>{if(!r.ok)return r.json().then(d=>{throw new Error(d.error||'Error')});return r.json()})}
-async function doAdminLogin(){
-try{
-var uname=document.getElementById('adminUser').value;
-var pwd=document.getElementById('adminPwd').value;
-var privKey=document.getElementById('adminKey').value.trim();
-var body={username:uname,password:pwd};
-if(privKey){
-  var ch=await fetch('/api/admin/challenge').then(r=>r.json());
-  var sig=sm2Sign(ch.msg,privKey);
-  body.signature=sig;body.nonce=ch.nonce;
-}
-var r=await api('/api/admin/login','POST',body);
-token=r.token;
-document.getElementById('loginPage').style.display='none';
-document.getElementById('app').style.display='flex';
-showTab('dashboard');
-}catch(e){document.getElementById('loginErr').textContent=e.message}}
-//=== Minimal SM2 Sign (embedded for admin auth) ===
-function bigint(i){return BigInt('0x'+i)}
-var P2=bigint('fffffffeffffffffffffffffffffffffffffffff00000000ffffffffffffffff');var N2=bigint('fffffffeffffffffffffffffffffffff7203df6b21c6052b53bbf40939d54123');var GX2=bigint('32c4ae2c1f1981195f9904466a39c9948fe30bbff2660be1715a4589334c74c7');var GY2=bigint('bc3736a2f4f6779c59bdcee36b692153d0a9877cc62a474002df32e52139f0a0');var A2=bigint('fffffffeffffffffffffffffffffffffffffffff00000000fffffffffffffffc');
-function modp(a,m){var r=a%m;return r<0n?r+m:r}function modm(a,b,m){return modp(a*b,m)}function modpow(a,e,m){if(e===0n)return 1n;var r=1n,b=modp(a,m);while(e>0n){if(e&1n)r=modm(r,b,m);b=modm(b,b,m);e>>=1n}return r}function modinv(a,m){return modpow(a,m-2n,m)}
-function pointAdd(p1,p2){if(!p1)return p2;if(!p2)return p1;if(p1.x===p2.x&&p1.y===modp(-p2.y,P2))return null;var lam;if(p1.x===p2.x&&p1.y===p2.y){if(p1.y===0n)return null;lam=modm(modm(3n*p1.x*p1.x+A2,modinv(2n*p1.y,P2),P2),1n,P2)}else{lam=modm(modp(p2.y-p1.y,P2),modinv(modp(p2.x-p1.x,P2),P2),P2)}return {x:modp(lam*lam-p1.x-p2.x,P2),y:modp(lam*(p1.x-modp(lam*lam-p1.x-p2.x,P2))-p1.y,P2)}}
-function pointMul(k,p){if(k===0n)return null;var r=null,a=p,s=modp(k,N2);while(s>0n){if(s&1n)r=pointAdd(r,a);a=pointAdd(a,a);s>>=1n}return r}
-function bytesToHex(b){return Array.from(b).map(function(x){return x.toString(16).padStart(2,'0')}).join('')}
-function str2bytes(s){return new TextEncoder().encode(s)}
-function rotlS(x,n){return((x<<n)|(x>>>32-n))>>>0}
-var IVS=[0x7380166f,0x4914b2b9,0x172442d7,0xda8a0600,0xa96f30bc,0x163138aa,0xe38dee4d,0xb0fb0e4e];var SBOXS=[214,144,233,254,204,225,61,183,22,182,20,194,40,251,44,5,43,103,154,118,42,190,4,195,170,68,19,38,73,134,6,153,156,66,80,244,145,239,152,122,51,84,11,67,237,207,172,98,228,179,28,169,201,8,232,149,128,223,148,250,117,143,63,166,71,7,167,252,243,115,23,186,131,89,60,25,230,133,79,168,104,107,129,178,113,100,218,139,248,235,15,75,112,86,157,53,30,36,14,94,99,88,209,162,37,34,124,59,1,33,120,135,212,0,70,87,159,211,39,82,76,54,2,231,160,196,200,158,234,191,138,210,64,199,56,181,163,247,242,206,249,97,21,161,224,174,93,164,155,52,26,85,173,147,50,48,245,140,177,227,29,246,226,46,130,102,202,96,192,41,35,171,13,83,78,111,213,219,55,69,222,253,142,47,3,255,106,114,109,108,91,81,141,27,175,146,187,221,188,127,17,217,92,65,31,16,90,216,10,193,49,136,165,205,123,189,45,116,208,18,184,229,180,176,137,105,151,74,12,150,119,126,101,185,241,9,197,110,198,132,24,240,125,236,58,220,77,32,121,238,95,62,215,203,57,72];
-function sm4S(x){return SBOXS[x&0xff]|(SBOXS[(x>>>8)&0xff]<<8)|(SBOXS[(x>>>16)&0xff]<<16)|(SBOXS[(x>>>24)&0xff]<<24)}
-function sm4Lprime(x){return x^rotlS(x,13)^rotlS(x,23)}
-function sm4Tprime(x){return sm4Lprime(sm4S(x))}
-var FK2=[0xa3b1bac6,0x56aa3350,0x677d9197,0xb27022dc];var CK2=[0x00070e15,0x1c232a31,0x383f464d,0x545b6269,0x70777e85,0x8c939aa1,0xa8afb6bd,0xc4cbd2d9,0xe0e7eef5,0xfc030a11,0x181f262d,0x343b4249,0x50575e65,0x6c737a81,0x888f969d,0xa4abb2b9,0xc0c7ced5,0xdce3eaf1,0xf8ff060d,0x141b2229,0x30373e45,0x4c535a61,0x686f767d,0x848b9299,0xa0a7aeb5,0xbcc3cad1,0xd8dfe6ed,0xf4fb0209,0x10171e25,0x2c333a41,0x484f565d,0x646b7279];
-function sm4ExpandKey(key){var mk=[],k=[],rk=[];for(var i=0;i<4;i++)mk[i]=(key[i*4]<<24)|(key[i*4+1]<<16)|(key[i*4+2]<<8)|key[i*4+3];for(var i=0;i<4;i++)k[i]=mk[i]^FK2[i];for(var i=0;i<32;i++){rk[i]=k[i]^sm4Tprime(k[i+1]^k[i+2]^k[i+3]^CK2[i]);k[i+4]=rk[i]}return rk}
-function sm4Round(X,rk){var x=[];for(var i=0;i<4;i++)x[i]=(X[i*4]<<24)|(X[i*4+1]<<16)|(X[i*4+2]<<8)|X[i*4+3];for(var i=0;i<32;i++)x.push(x[i]^((function(x){return x^rotlS(x,2)^rotlS(x,10)^rotlS(x,18)^rotlS(x,24)})(sm4S(x[i+1]^x[i+2]^x[i+3]^rk[i]))));var out=new Uint8Array(16);for(var i=0;i<4;i++){var v=x[35-i];out[i*4]=(v>>>24)&0xff;out[i*4+1]=(v>>>16)&0xff;out[i*4+2]=(v>>>8)&0xff;out[i*4+3]=v&0xff}return out}
-function sm4CBC(data,keyBytes,encrypt){var rk=sm4ExpandKey(keyBytes);var iv=encrypt?crypto.getRandomValues(new Uint8Array(16)):data.slice(0,16);var ct=encrypt?data:data.slice(16);var bc=Math.ceil(ct.length/16);var result=new Uint8Array(encrypt?16+bc*16:bc*16);if(encrypt)result.set(iv,0);var prev=iv;for(var i=0;i<bc;i++){var block=ct.slice(i*16,i*16+16);var pad=block.length<16?new Uint8Array(16):block;if(block.length<16){pad.set(block);var pl=16-block.length;for(var j=block.length;j<16;j++)pad[j]=pl}var input;if(encrypt){input=new Uint8Array(16);for(var j=0;j<16;j++)input[j]=pad[j]^prev[j]}else{input=pad}var out=encrypt?function(b,rk){return sm4Round(b,rk)}(input,rk):function(b,rk){return sm4Round(b,[...rk].reverse())}(input,rk);if(encrypt){result.set(out,16+i*16);prev=out}else{var plainBlock;if(i===bc-1&&block.length<16){plainBlock=out.slice(0,16-out[15])}else{plainBlock=out}result.set((function(a,b){var r=new Uint8Array(16);for(var j=0;j<16;j++)r[j]=a[j]^b[j];return r})(plainBlock,prev),i*16);prev=block}}return encrypt?result:result.slice(0,result.length-(encrypt?0:result[result.length-1]))}
-function _p0S(x){return x^rotlS(x,9)^rotlS(x,17)}function _p1S(x){return x^rotlS(x,15)^rotlS(x,23)}
-function _ff0S(x,y,z){return x^y^z}function _ff1S(x,y,z){return(x&y)|(x&z)|(y&z)}
-function _gg0S(x,y,z){return x^y^z}function _gg1S(x,y,z){return(x&y)|(~x&z)}
-function sm3Hash(msgBytes){var len=msgBytes.length*8;var padLen=(448-(len+1)%512+512)%512;var totalBytes=(len+1+padLen+64)/8;var padded=new Uint8Array(totalBytes);padded.set(msgBytes);padded[msgBytes.length]=0x80;var view=new DataView(padded.buffer);view.setUint32(totalBytes-4,len&0xffffffff);view.setUint32(totalBytes-8,Math.floor(len/0x100000000));var V=[...IVS];var W=new Uint32Array(68),W1=new Uint32Array(64);for(var block=0;block<totalBytes;block+=64){for(var i=0;i<16;i++)W[i]=view.getUint32(block+i*4);for(var i=16;i<68;i++)W[i]=_p1S(W[i-16]^W[i-9]^rotlS(W[i-3],15))^rotlS(W[i-13],7)^W[i-6];for(var i=0;i<64;i++)W1[i]=W[i]^W[i+4];var A=V[0],B=V[1],C=V[2],D=V[3],E=V[4],F=V[5],G=V[6],H=V[7];for(var j=0;j<64;j++){var Tj=j<16?0x79cc4519:0x7a879d8a;var SS1=rotlS(rotlS(A,12)+E+rotlS(Tj,j%32),7);var SS2=SS1^rotlS(A,12);var TT1=j<16?_ff0S(A,B,C)+D+SS2+W1[j]:_ff1S(A,B,C)+D+SS2+W1[j];var TT2=j<16?_gg0S(E,F,G)+H+SS1+W[j]:_gg1S(E,F,G)+H+SS1+W[j];D=C;C=rotlS(B,9);B=A;A=TT1;H=G;G=rotlS(F,19);F=E;E=_p0S(TT2)}V[0]^=A;V[1]^=B;V[2]^=C;V[3]^=D;V[4]^=E;V[5]^=F;V[6]^=G;V[7]^=H}var hash=new Uint8Array(32);var dv=new DataView(hash.buffer);for(var i=0;i<8;i++)dv.setUint32(i*4,V[i]);return hash}
-function hexToBytes(hex){hex=hex.replace(/\s/g,'');var b=new Uint8Array(hex.length/2);for(var i=0;i<b.length;i++)b[i]=parseInt(hex.substr(i*2,2),16);return b}
-function computeZA(pk){var id='31323334353637383132333435363738';var entla='0080';var aH='FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC';var bH='28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93';var gxH='32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7';var gyH='BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0';return sm3Hash(hexToBytes(entla+id+aH+bH+gxH+gyH+pk.slice(2,66)+pk.slice(66,130)))}
-function sm2Sign(msg,privH){var d=bigint(privH);var mb=typeof msg==='string'?new TextEncoder().encode(msg):new Uint8Array(msg);var G={x:GX2,y:GY2};var pp=pointMul(d,G);var pkH='04'+d.toString(16).padStart(64,'0')+'placeholder'.slice(0,0);pkH='04'+pp.x.toString(16).padStart(64,'0')+pp.y.toString(16).padStart(64,'0');var ZA=computeZA(pkH);var eH=(function(ZA,m){var c=new Uint8Array(ZA.length+m.length);c.set(ZA);c.set(m,ZA.length);return sm3Hash(c)})(ZA,mb);var e=bigint(bytesToHex(eH));var r,s;while(true){var kb=crypto.getRandomValues(new Uint8Array(32));var k=bigint(bytesToHex(kb))%N2;if(k===0n)continue;var kG=pointMul(k,G);r=modp(e+kG.x,N2);if(r===0n||modp(r+k,N2)===0n)continue;var d1=modinv(1n+d,N2);s=modm(d1,modp(k-modm(r,d,N2),N2),N2);if(s!==0n)break}return {r:r.toString(16).padStart(64,'0'),s:s.toString(16).padStart(64,'0')}}
+async function doAdminLogin(){try{var r=await api('/api/admin/login','POST',{username:document.getElementById('adminUser').value,password:document.getElementById('adminPwd').value});token=r.token;document.getElementById('loginPage').style.display='none';document.getElementById('app').style.display='flex';showTab('dashboard')}catch(e){document.getElementById('loginErr').textContent=e.message}}
 async function showTab(t){
 document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
 document.getElementById('tab-'+t).classList.add('active');
@@ -207,29 +166,14 @@ async function startServer(){
   }
   function userAuth(req,res,next){const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'});req.user=s.username;next()}
 
-  // ===== 管理员系统 (SM2 签名认证) =====
-  const adminChallenges={}
-  app.get('/api/admin/challenge',(req,res)=>{
-    const nonce=crypto.randomBytes(32).toString('hex')
-    const expires=Date.now()+300000
-    adminChallenges[nonce]=expires
-    res.json({nonce,expires,msg:'sign:'+nonce})
-  })
+  // ===== 管理员系统 =====
   app.post('/api/admin/login',(req,res)=>{
-    const{username,password,signature,nonce}=req.body
+    const{username,password}=req.body
     const r=db.exec('SELECT * FROM users WHERE username=? AND password_hash=? AND role=?',[username,sm3HashHex(password),'admin'])
     if(!r.length||!r[0].values.length)return res.status(403).json({error:'admin auth failed'})
-    const pubKey=r[0].values[0][2]||''
-    if(pubKey&&signature&&nonce){
-      const ch=adminChallenges[nonce]
-      if(!ch||ch<Date.now())return res.status(403).json({error:'challenge expired'})
-      delete adminChallenges[nonce]
-      const msg='sign:'+nonce
-      if(!sm2Verify(msg,signature,pubKey))return res.status(403).json({error:'SM2 signature verification failed'})
-    }
     const token=crypto.randomBytes(32).toString('hex')
     sessions[token]={username,expires:Date.now()+86400000}
-    addLog(username,'admin_login','','SM2 admin login')
+    addLog(username,'admin_login','','admin login')
     res.json({ok:true,token})
   })
   app.get('/api/admin/stats',adminAuth,(req,res)=>{
