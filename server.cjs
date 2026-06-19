@@ -66,7 +66,7 @@ function initDB(){
 // ==================== Admin HTML ====================
 const ADMIN_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ShieldX Admin</title>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>国密平台管理后台</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}body{font-family:"Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1a1a2e;display:flex;min-height:100vh}
 .login-box{width:400px;margin:100px auto;padding:40px;background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.08);text-align:center}
@@ -91,13 +91,13 @@ th{background:#fafafa;font-weight:600;color:#555}tr:hover{background:#f8f9ff}
 </style></head>
 <body>
 <div id="loginPage" class="login-box">
-<h1>ShieldX Admin</h1>
+<h1>国密平台管理后台</h1>
 <input id="adminUser" placeholder="管理员用户名" autocomplete="off"><input id="adminPwd" type="password" placeholder="管理员密码">
 <button onclick="doAdminLogin()">管理员登录</button><div id="loginErr" class="err"></div>
 </div>
 <div id="app" class="hidden" style="display:none;display:flex;width:100%">
 <div class="sidebar">
-<h2>ShieldX Admin</h2>
+<h2>国密平台管理后台</h2>
 <a onclick="showTab('dashboard')" id="tab-dashboard" class="active">仪表盘</a>
 <a onclick="showTab('users')" id="tab-users">用户管理</a>
 <a onclick="showTab('files')" id="tab-files">文件管理</a>
@@ -296,7 +296,14 @@ async function startServer(){
     res.json({ok:true,status:'ok',mode:'E2EE Multi-User SQLite',files:count})
   })
 
-  // ===== Admin 网页后台 =====
+  // ===== Admin 网页后台 (IP白名单) =====
+  const ADMIN_IPS = (process.env.ADMIN_IPS || '127.0.0.1,::1,172.16.5.1,localhost').split(',')
+  app.use('/admin',(req,res,next)=>{
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress
+    const allowed = ADMIN_IPS.some(ip => clientIp.includes(ip.replace('localhost','127.0.0.1')))
+    if (!allowed) return res.status(403).json({error:'Access denied from '+clientIp})
+    next()
+  })
   app.get('/admin',(req,res)=>{res.type('html').send(ADMIN_HTML)})
 
   app.listen(PORT,'0.0.0.0',()=>console.log('[SMC SQLite] http://0.0.0.0:'+PORT))
