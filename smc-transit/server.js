@@ -1,4 +1,4 @@
-// SMC Server 鈥?Express + SM2/SM3/SM4 + SQLite
+// SMC Server — Express + SM2/SM3/SM4 + SQLite
 const crypto = require('crypto'); const fs = require('fs'); const path = require('path')
 const express = require('express'); const cors = require('cors'); const multer = require('multer')
 const initSqlJs = require('sql.js')
@@ -51,7 +51,7 @@ function kdf(z,klen){const ct=new Uint8Array(4);const hs=[];for(let i=0;i*32<kle
 function sm2Encrypt(msg,pkH){const pp=parsePK(pkH);if(!pp||pp.isInfinity)throw new Error('invalid key');const mb=typeof msg==='string'?new TextEncoder().encode(msg):new Uint8Array(msg);let k,C1,S;do{k=BigInt('0x'+bytesToHex(crypto.randomBytes(32)))%N}while(k===0n);C1=pointMul(k,G);S=pointMul(k,pp);if(S.isInfinity)throw new Error('encrypt fail');const c1b=hexToBytes('04'+bytesToHex32(C1.x)+bytesToHex32(C1.y));const sb=hexToBytes(bytesToHex32(S.x)+bytesToHex32(S.y));const t=kdf(sb,mb.length);const C2=new Uint8Array(mb.length);for(let i=0;i<mb.length;i++)C2[i]=mb[i]^t[i];const c3i=new Uint8Array(sb.length+mb.length);c3i.set(sb);c3i.set(mb,sb.length);return bytesToHex(c1b)+bytesToHex(sm3Hash(c3i))+bytesToHex(C2)}
 function sm2Decrypt(ch,privH){const d=BigInt('0x'+privH);if(ch.length<194)throw new Error('short');const C1=parsePK(ch.slice(0,130));const C3=hexToBytes(ch.slice(130,194));const C2=hexToBytes(ch.slice(194));if(!C1||C1.isInfinity)throw new Error('C1 fail');const S=pointMul(d,C1);if(S.isInfinity)throw new Error('dec fail');const sb=hexToBytes(bytesToHex32(S.x)+bytesToHex32(S.y));const t=kdf(sb,C2.length);const M=new Uint8Array(C2.length);for(let i=0;i<C2.length;i++)M[i]=C2[i]^t[i];const ui=new Uint8Array(sb.length+M.length);ui.set(sb);ui.set(M,sb.length);if(!sm3Hash(ui).every((b,i)=>b===C3[i]))throw new Error('C3 fail');return M}
 
-// ==================== SQLite 鏁版嵁搴?====================
+// ==================== SQLite 数据库 ====================
 let db, _SQL
 function getDataDir(){const d=path.join(process.env.APPDATA||path.join(process.env.HOME,'.local/share'),'smc-platform');try{fs.mkdirSync(d,{recursive:true})}catch{};return d}
 function saveDB(){try{fs.writeFileSync(path.join(getDataDir(),'smc.db'),db.export())}catch{}}
@@ -92,17 +92,17 @@ th{background:#fafafa;font-weight:600;color:#555}tr:hover{background:#f8f9ff}
 <body>
 <div id="loginPage" class="login-box">
 <h1>SMC Admin Panel</h1>
-<input id="adminUser" placeholder="绠＄悊鍛樼敤鎴峰悕" autocomplete="off"><input id="adminPwd" type="password" placeholder="绠＄悊鍛樺瘑鐮?>
-<button onclick="doAdminLogin()">绠＄悊鍛樼櫥褰?/button><div id="loginErr" class="err"></div>
+<input id="adminUser" placeholder="管理员用户名" autocomplete="off"><input id="adminPwd" type="password" placeholder="管理员密码">
+<button onclick="doAdminLogin()">管理员登录</button><div id="loginErr" class="err"></div>
 </div>
 <div id="app" class="hidden" style="display:none;display:flex;width:100%">
 <div class="sidebar">
 <h2>SMC Admin Panel</h2>
-<a onclick="showTab('dashboard')" id="tab-dashboard" class="active">浠〃鐩?/a>
-<a onclick="showTab('users')" id="tab-users">鐢ㄦ埛绠＄悊</a>
-<a onclick="showTab('files')" id="tab-files">鏂囦欢绠＄悊</a>
-<a onclick="showTab('logs')" id="tab-logs">瀹¤鏃ュ織</a>
-<a onclick="doLogout()" style="margin-top:auto;color:#ff3b30">閫€鍑虹櫥褰?/a>
+<a onclick="showTab('dashboard')" id="tab-dashboard" class="active">仪表盘</a>
+<a onclick="showTab('users')" id="tab-users">用户管理</a>
+<a onclick="showTab('files')" id="tab-files">文件管理</a>
+<a onclick="showTab('logs')" id="tab-logs">审计日志</a>
+<a onclick="doLogout()" style="margin-top:auto;color:#ff3b30">退出登录</a>
 </div>
 <div class="main" id="content"></div>
 </div>
@@ -114,13 +114,13 @@ async function showTab(t){
 document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
 document.getElementById('tab-'+t).classList.add('active');
 var c=document.getElementById('content');
-if(t==='dashboard'){var s=await api('/api/admin/stats');c.innerHTML='<h3>浠〃鐩?/h3><div class=cards><div class=card><div class=num>'+s.users+'</div><div class=label>鐢ㄦ埛鎬绘暟</div></div><div class=card><div class=num>'+s.files+'</div><div class=label>鏂囦欢鎬绘暟</div></div><div class=card><div class=num>'+s.shares+'</div><div class=label>鍒嗕韩娆℃暟</div></div><div class=card><div class=num>'+s.auditLogs+'</div><div class=label>瀹¤鏃ュ織</div></div></div>'}
-if(t==='users'){var u=await api('/api/admin/users');c.innerHTML='<h3>鐢ㄦ埛绠＄悊</h3><div class=meta>鍏?'+u.length+' 涓敤鎴?/div><table><tr><th>鐢ㄦ埛鍚?/th><th>娉ㄥ唽鏃堕棿</th><th>瑙掕壊</th><th>鎿嶄綔</th></tr>'+(u.length===0?'<tr><td colspan=4 class=empty>鏆傛棤鐢ㄦ埛</td></tr>':u.map(function(x){return'<tr><td>'+x.username+'</td><td>'+x.created.slice(0,10)+'</td><td>'+x.role+'</td><td><button class="btn-sm btn-danger" onclick="delUser(\\''+x.username+'\\')">鍒犻櫎</button></td></tr>'}).join(''))+'</table>'}
-if(t==='files'){var f=await api('/api/admin/files');c.innerHTML='<h3>鏂囦欢绠＄悊</h3><div class=meta>鍏?'+f.length+' 涓枃浠?/div><table><tr><th>ID</th><th>鎵€鏈夎€?/th><th>鏂囦欢鍚?/th><th>澶у皬</th><th>涓婁紶鏃堕棿</th><th>鎿嶄綔</th></tr>'+(f.length===0?'<tr><td colspan=6 class=empty>鏆傛棤鏂囦欢</td></tr>':f.map(function(x){var sz=x.size<1024?x.size+'B':x.size<1048576?(x.size/1024).toFixed(1)+'KB':(x.size/1048576).toFixed(1)+'MB';return'<tr><td style=font-size:11px>'+x.id.slice(0,12)+'...</td><td>'+x.owner+'</td><td>'+x.name+'</td><td>'+sz+'</td><td>'+x.uploadedAt.slice(0,10)+'</td><td><button class="btn-sm btn-danger" onclick="delFile(\\''+x.id+'\\')">鍒犻櫎</button></td></tr>'}).join(''))+'</table>'}
-if(t==='logs'){var l=await api('/api/admin/logs');c.innerHTML='<h3>瀹¤鏃ュ織</h3><table><tr><th>鏃堕棿</th><th>鐢ㄦ埛</th><th>鎿嶄綔</th><th>璇︽儏</th></tr>'+(l.length===0?'<tr><td colspan=4 class=empty>鏆傛棤鏃ュ織</td></tr>':l.map(function(x){return'<tr><td>'+x.createdAt.slice(0,19)+'</td><td>'+x.username+'</td><td>'+x.action+'</td><td>'+x.detail+'</td></tr>'}).join(''))+'</table>'}
+if(t==='dashboard'){var s=await api('/api/admin/stats');c.innerHTML='<h3>仪表盘</h3><div class=cards><div class=card><div class=num>'+s.users+'</div><div class=label>用户总数</div></div><div class=card><div class=num>'+s.files+'</div><div class=label>文件总数</div></div><div class=card><div class=num>'+s.shares+'</div><div class=label>分享次数</div></div><div class=card><div class=num>'+s.auditLogs+'</div><div class=label>审计日志</div></div></div>'}
+if(t==='users'){var u=await api('/api/admin/users');c.innerHTML='<h3>用户管理</h3><div class=meta>共 '+u.length+' 个用户</div><table><tr><th>用户名</th><th>注册时间</th><th>角色</th><th>操作</th></tr>'+(u.length===0?'<tr><td colspan=4 class=empty>暂无用户</td></tr>':u.map(function(x){return'<tr><td>'+x.username+'</td><td>'+x.created.slice(0,10)+'</td><td>'+x.role+'</td><td><button class="btn-sm btn-danger" onclick="delUser(\\''+x.username+'\\')">删除</button></td></tr>'}).join(''))+'</table>'}
+if(t==='files'){var f=await api('/api/admin/files');c.innerHTML='<h3>文件管理</h3><div class=meta>共 '+f.length+' 个文件</div><table><tr><th>ID</th><th>所有者</th><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr>'+(f.length===0?'<tr><td colspan=6 class=empty>暂无文件</td></tr>':f.map(function(x){var sz=x.size<1024?x.size+'B':x.size<1048576?(x.size/1024).toFixed(1)+'KB':(x.size/1048576).toFixed(1)+'MB';return'<tr><td style=font-size:11px>'+x.id.slice(0,12)+'...</td><td>'+x.owner+'</td><td>'+x.name+'</td><td>'+sz+'</td><td>'+x.uploadedAt.slice(0,10)+'</td><td><button class="btn-sm btn-danger" onclick="delFile(\\''+x.id+'\\')">删除</button></td></tr>'}).join(''))+'</table>'}
+if(t==='logs'){var l=await api('/api/admin/logs');c.innerHTML='<h3>审计日志</h3><table><tr><th>时间</th><th>用户</th><th>操作</th><th>详情</th></tr>'+(l.length===0?'<tr><td colspan=4 class=empty>暂无日志</td></tr>':l.map(function(x){return'<tr><td>'+x.createdAt.slice(0,19)+'</td><td>'+x.username+'</td><td>'+x.action+'</td><td>'+x.detail+'</td></tr>'}).join(''))+'</table>'}
 }
-async function delUser(u){if(!confirm('纭畾鍒犻櫎鐢ㄦ埛 '+u+'锛熸鎿嶄綔涓嶅彲鎾ら攢銆?))return;await api('/api/admin/users/'+encodeURIComponent(u),'DELETE');showTab('users')}
-async function delFile(id){if(!confirm('纭畾鍒犻櫎鏂囦欢锛?))return;await api('/api/admin/files/'+id,'DELETE');showTab('files')}
+async function delUser(u){if(!confirm('确定删除用户 '+u+'？此操作不可撤销。'))return;await api('/api/admin/users/'+encodeURIComponent(u),'DELETE');showTab('users')}
+async function delFile(id){if(!confirm('确定删除文件？'))return;await api('/api/admin/files/'+id,'DELETE');showTab('files')}
 function doLogout(){token='';document.getElementById('loginPage').style.display='';document.getElementById('app').style.display='none'}
 </script></body></html>`
 
@@ -151,7 +151,7 @@ async function startServer(){
   app.post('/api/sm2/encrypt',auth,(req,res)=>{const{m,pk}=req.body;try{res.json({c:sm2Encrypt(m,pk)})}catch(e){res.status(400).json({error:e.message})}})
   app.post('/api/sm2/decrypt',auth,(req,res)=>{const{c,sk}=req.body;try{res.json({p:new TextDecoder().decode(sm2Decrypt(c,sk))})}catch(e){res.status(400).json({error:e.message})}})
 
-  // ===== 瀹¤鏃ュ織 =====
+  // ===== 审计日志 =====
   const sessions={}
   function addLog(username,action,target,detail){
     try{db.run('INSERT INTO audit_logs(username,action,target,detail,created_at) VALUES(?,?,?,?,?)',[username||'unknown',action,target||'',detail||'',new Date().toISOString()]);saveDB()}catch{}
@@ -166,7 +166,7 @@ async function startServer(){
   }
   function userAuth(req,res,next){const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'});req.user=s.username;next()}
 
-  // ===== 绠＄悊鍛樼郴缁?=====
+  // ===== 管理员系统 =====
   app.post('/api/admin/login',(req,res)=>{
     const{username,password}=req.body
     const r=db.exec('SELECT * FROM users WHERE username=? AND password_hash=? AND role=?',[username,sm3HashHex(password),'admin'])
@@ -190,7 +190,7 @@ async function startServer(){
     db.run('DELETE FROM shares WHERE username=?',[req.params.username])
     db.run('DELETE FROM files WHERE owner=?',[req.params.username])
     db.run('DELETE FROM users WHERE username=?',[req.params.username])
-    saveDB();addLog(req.user,'delete_user',req.params.username,'绠＄悊鍛樺垹闄ょ敤鎴?)
+    saveDB();addLog(req.user,'delete_user',req.params.username,'管理员删除用户')
     res.json({ok:true})
   })
   app.get('/api/admin/files',adminAuth,(req,res)=>{
@@ -198,22 +198,22 @@ async function startServer(){
     res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],owner:v[1],name:v[2],size:v[3],uploadedAt:v[4]})))
   })
   app.delete('/api/admin/files/:id',adminAuth,(req,res)=>{
-    db.run('DELETE FROM shares WHERE file_id=?',[req.params.id]);db.run('DELETE FROM files WHERE id=?',[req.params.id]);saveDB();addLog(req.user,'delete_file',req.params.id,'绠＄悊鍛樺垹闄ゆ枃浠?);res.json({ok:true})
+    db.run('DELETE FROM shares WHERE file_id=?',[req.params.id]);db.run('DELETE FROM files WHERE id=?',[req.params.id]);saveDB();addLog(req.user,'delete_file',req.params.id,'管理员删除文件');res.json({ok:true})
   })
   app.get('/api/admin/logs',adminAuth,(req,res)=>{
     const r=db.exec('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200')
     res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],username:v[1],action:v[2],target:v[3],detail:v[4],createdAt:v[5]})))
   })
 
-  // ===== 鐢ㄦ埛绯荤粺 (SQLite) =====
+  // ===== 用户系统 (SQLite) =====
   app.post('/api/user/register',(req,res)=>{
     const{username,password}=req.body
     if(!username||!password)return res.status(400).json({error:'missing fields'})
-    if(!/^[a-zA-Z0-9_涓€-榫{2,20}$/.test(username))return res.status(400).json({error:'invalid username'})
+    if(!/^[a-zA-Z0-9_一-龥]{2,20}$/.test(username))return res.status(400).json({error:'invalid username'})
     const r=db.exec('SELECT * FROM users WHERE username=?',[username])
     if(r.length&&r[0].values.length)return res.status(400).json({error:'exists'})
     db.run('INSERT INTO users VALUES(?,?,?,?,?)',[username,sm3HashHex(password),'',new Date().toISOString(),'user'])
-    saveDB();addLog(username,'register','','鏂扮敤鎴锋敞鍐?);res.json({ok:true,username})
+    saveDB();addLog(username,'register','','新用户注册');res.json({ok:true,username})
   })
   app.post('/api/user/login',(req,res)=>{
     const{username,password}=req.body
@@ -222,7 +222,7 @@ async function startServer(){
     const token=crypto.randomBytes(32).toString('hex')
     sessions[token]={username,expires:Date.now()+86400000}
     const pubKey=r[0].values[0][2]||''
-    addLog(username,'login','','鐢ㄦ埛鐧诲綍');res.json({ok:true,username,token,pubKey})
+    addLog(username,'login','','用户登录');res.json({ok:true,username,token,pubKey})
   })
   app.get('/api/user/info',(req,res)=>{
     const token=(req.headers['authorization']||'').replace('Bearer ','')
@@ -239,11 +239,11 @@ async function startServer(){
     const token=(req.headers['authorization']||'').replace('Bearer ','')
     if(!sessions[token])return res.status(401).json({error:'not logged in'})
     const r=db.exec('SELECT username,pub_key FROM users ORDER BY username')
-    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],pubKey:v[1]||'鏈缃?})))
+    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],pubKey:v[1]||'未设置'})))
   })
   app.post('/api/user/logout',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');delete sessions[token];res.json({ok:true})})
 
-  // ===== 鏂囦欢 (SQLite) =====
+  // ===== 文件 (SQLite) =====
   app.post('/api/files/upload',userAuth,(req,res)=>{uploadFile(req,res,function(err){if(err)return res.status(err.code==='LIMIT_FILE_SIZE'?413:500).json({error:err.message});try{const{name,originalName,sm3Hash,pubKey,signature,encryptedKey}=req.body;if(!req.file||!req.file.buffer)return res.status(400).json({error:'no file'});if(!name||!pubKey||!sm3Hash)return res.status(400).json({error:'missing fields'});const id=fileUid();fs.writeFileSync(path.join(STORAGE_DIR(),id+'.enc'),req.file.buffer);let sig=null;try{sig=typeof signature==='string'?JSON.parse(signature):signature}catch{};db.run('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)',[id,req.user,name,originalName||name,req.file.size,sm3Hash,pubKey,sig?JSON.stringify(sig):'',encryptedKey||'',new Date().toISOString()]);saveDB();if(req.body.pubKey){const ur=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);if(!ur[0].values[0][0]){db.run('UPDATE users SET pub_key=? WHERE username=?',[pubKey,req.user]);saveDB()}}res.json({id,name,size:req.file.size})}catch(e){res.status(500).json({error:e.message})}})})
   app.get('/api/files/list',userAuth,(req,res)=>{
     const my=db.exec('SELECT * FROM files WHERE owner=? ORDER BY uploaded_at DESC',[req.user])
@@ -296,14 +296,6 @@ async function startServer(){
     res.json({ok:true,status:'ok',mode:'E2EE Multi-User SQLite',files:count})
   })
 
-  // ===== Admin 缃戦〉鍚庡彴 (IP鐧藉悕鍗? =====
-  const ADMIN_IPS = (process.env.ADMIN_IPS || '127.0.0.1,::1,172.16.5.1,localhost').split(',')
-  app.use('/admin',(req,res,next)=>{
-    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress
-    const allowed = ADMIN_IPS.some(ip => clientIp.includes(ip.replace('localhost','127.0.0.1')))
-    if (!allowed) return res.status(403).json({error:'Access denied from '+clientIp})
-    next()
-  })
   app.get('/admin',(req,res)=>{res.type('html').send(ADMIN_HTML)})
 
   app.listen(PORT,'0.0.0.0',()=>console.log('[SMC SQLite] http://0.0.0.0:'+PORT))

@@ -296,14 +296,6 @@ async function startServer(){
     res.json({ok:true,status:'ok',mode:'E2EE Multi-User SQLite',files:count})
   })
 
-  // ===== Admin 网页后台 (IP白名单) =====
-  const ADMIN_IPS = (process.env.ADMIN_IPS || '127.0.0.1,::1,172.16.5.1,localhost').split(',')
-  app.use('/admin',(req,res,next)=>{
-    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress
-    const allowed = ADMIN_IPS.some(ip => clientIp.includes(ip.replace('localhost','127.0.0.1')))
-    if (!allowed) return res.status(403).json({error:'Access denied from '+clientIp})
-    next()
-  })
   app.get('/admin',(req,res)=>{res.type('html').send(ADMIN_HTML)})
 
   app.listen(PORT,'0.0.0.0',()=>console.log('[SMC SQLite] http://0.0.0.0:'+PORT))
