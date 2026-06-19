@@ -219,7 +219,7 @@ async function startServer(){
     const{username,password}=req.body
     const r=db.exec('SELECT * FROM users WHERE username=? AND password_hash=?',[username,sm3HashHex(password)])
     if(!r.length||!r[0].values.length)return res.status(401).json({error:'wrong credentials'})
-    if(r[0].values[0][3]==='admin')return res.status(401).json({error:'user not found'})
+    if(r[0].values[0][3]==='admin')return res.status(401).json({error:'wrong credentials'})
     const token=crypto.randomBytes(32).toString('hex')
     sessions[token]={username,expires:Date.now()+86400000}
     const pubKey=r[0].values[0][2]||''
