@@ -256,13 +256,13 @@ async function startServer(){
   })
   app.get('/api/files/:id',userAuth,(req,res)=>{
     let r=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
-    if(!r.length||!r[0].values.length){const pubUr=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);const pub=pubUr.length&&pubUr[0].values.length?pubUr[0].values[0][0]:'';r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,pub])}
+    if(!r.length||!r[0].values.length){r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,req.user])}
     if(!r.length||!r[0].values.length)return res.status(404).json({error:'not found'})
     const v=r[0].values[0];res.json({id:v[0],owner:v[1],name:v[2],originalName:v[3],size:v[4],sm3Hash:v[5],pubKey:v[6],signature:v[7]?JSON.parse(v[7]):null,encryptedKey:v[8],uploadedAt:v[9]})
   })
   app.get('/api/files/:id/download',userAuth,(req,res)=>{
     let r=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
-    if(!r.length||!r[0].values.length){const pubUr=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);const pub=pubUr.length&&pubUr[0].values.length?pubUr[0].values[0][0]:'';r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,pub])}
+    if(!r.length||!r[0].values.length){r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,req.user])}
     if(!r.length||!r[0].values.length)return res.status(404).json({error:'not found'})
     const fp=path.join(STORAGE_DIR(),req.params.id+'.enc');if(!fs.existsSync(fp))return res.status(404).json({error:'file lost'});res.setHeader('Content-Disposition','attachment; filename="'+encodeURIComponent(r[0].values[0][2])+'"');res.sendFile(fp)
   })
