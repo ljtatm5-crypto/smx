@@ -59,7 +59,7 @@ function saveDB(){try{fs.writeFileSync(path.join(getDataDir(),'smc.db'),db.expor
 function initDB(){
   db=new _SQL.Database()
   const dbPath=path.join(getDataDir(),'smc.db')
-  try{const buf=fs.readFileSync(dbPath);if(buf.length>0)db=new _SQL.Database(buf);else{db.run('CREATE TABLE users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL)');db.run('CREATE TABLE files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)')}}catch{db.run('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE IF NOT EXISTS api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)')}
+  try{const buf=fs.readFileSync(dbPath);if(buf.length>0)db=new _SQL.Database(buf);else{db.run('CREATE TABLE users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL)')}}catch{db.run('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE IF NOT EXISTS api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL)')}
   saveDB()
 }
 
@@ -90,16 +90,69 @@ async function startServer(){
   app.post('/api/sm2/encrypt',auth,(req,res)=>{const{m,pk}=req.body;try{res.json({c:sm2Encrypt(m,pk)})}catch(e){res.status(400).json({error:e.message})}})
   app.post('/api/sm2/decrypt',auth,(req,res)=>{const{c,sk}=req.body;try{res.json({p:new TextDecoder().decode(sm2Decrypt(c,sk))})}catch(e){res.status(400).json({error:e.message})}})
 
-  // ===== 用户系统 (SQLite) =====
+  // ===== 审计日志 =====
   const sessions={}
+  function addLog(username,action,target,detail){
+    try{db.run('INSERT INTO audit_logs(username,action,target,detail,created_at) VALUES(?,?,?,?,?)',[username||'unknown',action,target||'',detail||'',new Date().toISOString()]);saveDB()}catch{}
+  }
+  function adminAuth(req,res,next){
+    const token=(req.headers['authorization']||'').replace('Bearer ','')
+    const s=sessions[token]
+    if(!s||s.expires<Date.now())return res.status(401).json({error:'请先登录'})
+    const ur=db.exec('SELECT role FROM users WHERE username=?',[s.username])
+    if(!ur.length||ur[0].values[0][0]!=='admin')return res.status(403).json({error:'需管理员权限'})
+    req.user=s.username;next()
+  }
+  function userAuth(req,res,next){const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'});req.user=s.username;next()}
+
+  // ===== 管理员系统 =====
+  app.post('/api/admin/login',(req,res)=>{
+    const{username,password}=req.body
+    const r=db.exec('SELECT * FROM users WHERE username=? AND password_hash=? AND role=?',[username,sm3HashHex(password),'admin'])
+    if(!r.length||!r[0].values.length)return res.status(403).json({error:'管理员验证失败'})
+    const token=crypto.randomBytes(32).toString('hex')
+    sessions[token]={username,expires:Date.now()+86400000}
+    addLog(username,'admin_login','','管理员登录')
+    res.json({ok:true,token})
+  })
+  app.get('/api/admin/stats',adminAuth,(req,res)=>{
+    const uc=db.exec('SELECT COUNT(*) FROM users');const fc=db.exec('SELECT COUNT(*) FROM files');const sc=db.exec('SELECT COUNT(*) FROM shares');const ac=db.exec('SELECT COUNT(*) FROM audit_logs')
+    res.json({users:uc[0].values[0][0],files:fc[0].values[0][0],shares:sc[0].values[0][0],auditLogs:ac[0].values[0][0]})
+  })
+  app.get('/api/admin/users',adminAuth,(req,res)=>{
+    const r=db.exec('SELECT username,created,role FROM users ORDER BY created DESC')
+    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],created:v[1],role:v[2]||'user'})))
+  })
+  app.delete('/api/admin/users/:username',adminAuth,(req,res)=>{
+    if(req.params.username===req.user)return res.status(400).json({error:'不能删除自己'})
+    db.run('DELETE FROM shares WHERE file_id IN (SELECT id FROM files WHERE owner=?)',[req.params.username])
+    db.run('DELETE FROM shares WHERE username=?',[req.params.username])
+    db.run('DELETE FROM files WHERE owner=?',[req.params.username])
+    db.run('DELETE FROM users WHERE username=?',[req.params.username])
+    saveDB();addLog(req.user,'delete_user',req.params.username,'管理员删除用户')
+    res.json({ok:true})
+  })
+  app.get('/api/admin/files',adminAuth,(req,res)=>{
+    const r=db.exec('SELECT id,owner,original_name,size,uploaded_at FROM files ORDER BY uploaded_at DESC')
+    res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],owner:v[1],name:v[2],size:v[3],uploadedAt:v[4]})))
+  })
+  app.delete('/api/admin/files/:id',adminAuth,(req,res)=>{
+    db.run('DELETE FROM shares WHERE file_id=?',[req.params.id]);db.run('DELETE FROM files WHERE id=?',[req.params.id]);saveDB();addLog(req.user,'delete_file',req.params.id,'管理员删除文件');res.json({ok:true})
+  })
+  app.get('/api/admin/logs',adminAuth,(req,res)=>{
+    const r=db.exec('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200')
+    res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],username:v[1],action:v[2],target:v[3],detail:v[4],createdAt:v[5]})))
+  })
+
+  // ===== 用户系统 (SQLite) =====
   app.post('/api/user/register',(req,res)=>{
     const{username,password}=req.body
     if(!username||!password)return res.status(400).json({error:'missing fields'})
     if(!/^[a-zA-Z0-9_一-龥]{2,20}$/.test(username))return res.status(400).json({error:'invalid username'})
     const r=db.exec('SELECT * FROM users WHERE username=?',[username])
     if(r.length&&r[0].values.length)return res.status(400).json({error:'exists'})
-    db.run('INSERT INTO users VALUES(?,?,?,?)',[username,sm3HashHex(password),'',new Date().toISOString()])
-    saveDB();res.json({ok:true,username})
+    db.run('INSERT INTO users VALUES(?,?,?,?,?)',[username,sm3HashHex(password),'',new Date().toISOString(),'user'])
+    saveDB();addLog(username,'register','','新用户注册');res.json({ok:true,username})
   })
   app.post('/api/user/login',(req,res)=>{
     const{username,password}=req.body
@@ -128,7 +181,6 @@ async function startServer(){
     res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],pubKey:v[1]||'未设置'})))
   })
   app.post('/api/user/logout',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');delete sessions[token];res.json({ok:true})})
-  function userAuth(req,res,next){const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'});req.user=s.username;next()}
 
   // ===== 文件 (SQLite) =====
   app.post('/api/files/upload',userAuth,(req,res)=>{uploadFile(req,res,function(err){if(err)return res.status(err.code==='LIMIT_FILE_SIZE'?413:500).json({error:err.message});try{const{name,originalName,sm3Hash,pubKey,signature,encryptedKey}=req.body;if(!req.file||!req.file.buffer)return res.status(400).json({error:'no file'});if(!name||!pubKey||!sm3Hash)return res.status(400).json({error:'missing fields'});const id=fileUid();fs.writeFileSync(path.join(STORAGE_DIR(),id+'.enc'),req.file.buffer);let sig=null;try{sig=typeof signature==='string'?JSON.parse(signature):signature}catch{};db.run('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)',[id,req.user,name,originalName||name,req.file.size,sm3Hash,pubKey,sig?JSON.stringify(sig):'',encryptedKey||'',new Date().toISOString()]);saveDB();if(req.body.pubKey){const ur=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);if(!ur[0].values[0][0]){db.run('UPDATE users SET pub_key=? WHERE username=?',[pubKey,req.user]);saveDB()}}res.json({id,name,size:req.file.size})}catch(e){res.status(500).json({error:e.message})}})})
@@ -183,6 +235,26 @@ async function startServer(){
     const count=r[0]?r[0].values[0][0]:0
     res.json({ok:true,status:'ok',mode:'E2EE Multi-User SQLite',files:count})
   })
+
+  // ===== 管理员 API (需 ADMIN_KEY) =====
+  const ADMIN_KEY = process.env.ADMIN_KEY || 'smc-admin-2024'
+  function adminAuth(req,res,next){const key=(req.headers['x-admin-key']||req.query.key||'');if(key!==ADMIN_KEY)return res.status(403).json({error:'admin key required'});next()}
+  app.get('/api/admin/stats',adminAuth,(req,res)=>{
+    const uc=db.exec('SELECT COUNT(*) FROM users');const fc=db.exec('SELECT COUNT(*) FROM files');const sc=db.exec('SELECT COUNT(*) FROM shares')
+    res.json({users:uc[0].values[0][0],files:fc[0].values[0][0],shares:sc[0].values[0][0]})
+  })
+  app.get('/api/admin/users',adminAuth,(req,res)=>{
+    const r=db.exec('SELECT username,created,pub_key FROM users ORDER BY created DESC')
+    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],created:v[1],pubKey:v[2]?v[2].slice(0,20)+'...':'未设置'})))
+  })
+  app.delete('/api/admin/users/:username',adminAuth,(req,res)=>{
+    db.run('DELETE FROM shares WHERE username=?',[req.params.username]);db.run('DELETE FROM files WHERE owner=?',[req.params.username]);db.run('DELETE FROM users WHERE username=?',[req.params.username]);saveDB();res.json({ok:true})
+  })
+  app.get('/api/admin/files',adminAuth,(req,res)=>{
+    const r=db.exec('SELECT id,owner,original_name,size,uploaded_at FROM files ORDER BY uploaded_at DESC')
+    res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],owner:v[1],name:v[2],size:v[3],uploadedAt:v[4]})))
+  })
+  app.delete('/api/admin/files/:id',adminAuth,(req,res)=>{db.run('DELETE FROM shares WHERE file_id=?',[req.params.id]);db.run('DELETE FROM files WHERE id=?',[req.params.id]);saveDB();res.json({ok:true})})
 
   app.listen(PORT,'0.0.0.0',()=>console.log('[SMC SQLite] http://0.0.0.0:'+PORT))
 }
