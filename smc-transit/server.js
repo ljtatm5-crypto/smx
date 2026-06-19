@@ -159,9 +159,9 @@ async function startServer(){
   function adminAuth(req,res,next){
     const token=(req.headers['authorization']||'').replace('Bearer ','')
     const s=sessions[token]
-    if(!s||s.expires<Date.now())return res.status(401).json({error:'璇峰厛鐧诲綍'})
+    if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'})
     const ur=db.exec('SELECT role FROM users WHERE username=?',[s.username])
-    if(!ur.length||ur[0].values[0][0]!=='admin')return res.status(403).json({error:'闇€绠＄悊鍛樻潈闄?})
+    if(!ur.length||ur[0].values[0][0]!=='admin')return res.status(403).json({error:'admin required'})
     req.user=s.username;next()
   }
   function userAuth(req,res,next){const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s||s.expires<Date.now())return res.status(401).json({error:'not logged in'});req.user=s.username;next()}
@@ -170,10 +170,10 @@ async function startServer(){
   app.post('/api/admin/login',(req,res)=>{
     const{username,password}=req.body
     const r=db.exec('SELECT * FROM users WHERE username=? AND password_hash=? AND role=?',[username,sm3HashHex(password),'admin'])
-    if(!r.length||!r[0].values.length)return res.status(403).json({error:'绠＄悊鍛橀獙璇佸け璐?})
+    if(!r.length||!r[0].values.length)return res.status(403).json({error:'admin auth failed'})
     const token=crypto.randomBytes(32).toString('hex')
     sessions[token]={username,expires:Date.now()+86400000}
-    addLog(username,'admin_login','','绠＄悊鍛樼櫥褰?)
+    addLog(username,'admin_login','','admin login')
     res.json({ok:true,token})
   })
   app.get('/api/admin/stats',adminAuth,(req,res)=>{
@@ -185,7 +185,7 @@ async function startServer(){
     res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],created:v[1],role:v[2]||'user'})))
   })
   app.delete('/api/admin/users/:username',adminAuth,(req,res)=>{
-    if(req.params.username===req.user)return res.status(400).json({error:'涓嶈兘鍒犻櫎鑷繁'})
+    if(req.params.username===req.user)return res.status(400).json({error:'cannot delete self'})
     db.run('DELETE FROM shares WHERE file_id IN (SELECT id FROM files WHERE owner=?)',[req.params.username])
     db.run('DELETE FROM shares WHERE username=?',[req.params.username])
     db.run('DELETE FROM files WHERE owner=?',[req.params.username])
