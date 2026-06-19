@@ -248,22 +248,24 @@ async function startServer(){
   app.get('/api/files/list',userAuth,(req,res)=>{
     const my=db.exec('SELECT * FROM files WHERE owner=? ORDER BY uploaded_at DESC',[req.user])
     const myFiles=(my[0]||{values:[]}).values.map(r=>({id:r[0],owner:req.user,name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:true}))
-    const sr=db.exec("SELECT f.*,s.username as shared_to FROM files f JOIN shares s ON f.id=s.file_id WHERE s.username=? ORDER BY f.uploaded_at DESC",[req.user])
+    // Get user's pubKey for share matching
+    const myPubUr=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user])
+    const myPubKey=myPubUr.length&&myPubUr[0].values.length ? myPubUr[0].values[0][0] : ''
+    const sr=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE s.username=? ORDER BY f.uploaded_at DESC",[myPubKey])
     const sharedFiles=(sr[0]||{values:[]}).values.map(r=>({id:r[0],owner:r[1],name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:false,sharedBy:r[1]}))
-    // get authorized pubKeys for my files
     const authMap={}
     for(const f of myFiles){const ar=db.exec('SELECT username FROM shares WHERE file_id=?',[f.id]);authMap[f.id]=(ar[0]||{values:[]}).values.map(v=>({username:v[0]}))}
     res.json({my:myFiles.map(f=>({...f,authorizedUsers:authMap[f.id]||[]})),shared:sharedFiles.map(f=>({...f,authorizedUsers:[]}))})
   })
   app.get('/api/files/:id',userAuth,(req,res)=>{
     let r=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
-    if(!r.length||!r[0].values.length){r=db.exec("SELECT f.*,s.username as shared_to FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,req.user])}
+    if(!r.length||!r[0].values.length){const pubUr=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);const pub=pubUr.length&&pubUr[0].values.length?pubUr[0].values[0][0]:'';r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,pub])}
     if(!r.length||!r[0].values.length)return res.status(404).json({error:'not found'})
     const v=r[0].values[0];res.json({id:v[0],owner:v[1],name:v[2],originalName:v[3],size:v[4],sm3Hash:v[5],pubKey:v[6],signature:v[7]?JSON.parse(v[7]):null,encryptedKey:v[8],uploadedAt:v[9]})
   })
   app.get('/api/files/:id/download',userAuth,(req,res)=>{
     let r=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
-    if(!r.length||!r[0].values.length){r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,req.user])}
+    if(!r.length||!r[0].values.length){const pubUr=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);const pub=pubUr.length&&pubUr[0].values.length?pubUr[0].values[0][0]:'';r=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE f.id=? AND s.username=?",[req.params.id,pub])}
     if(!r.length||!r[0].values.length)return res.status(404).json({error:'not found'})
     const fp=path.join(STORAGE_DIR(),req.params.id+'.enc');if(!fs.existsSync(fp))return res.status(404).json({error:'file lost'});res.setHeader('Content-Disposition','attachment; filename="'+encodeURIComponent(r[0].values[0][2])+'"');res.sendFile(fp)
   })
@@ -272,14 +274,10 @@ async function startServer(){
     if(!targetPubKey||!grantSignature)return res.status(400).json({error:'missing targetPubKey or grantSignature'})
     const fr=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
     if(!fr.length||!fr[0].values.length)return res.status(404).json({error:'not found'})
-    // Look up target username from pubKey
-    const ur=db.exec('SELECT username FROM users WHERE pub_key=?',[targetPubKey])
-    if(!ur.length||!ur[0].values.length)return res.status(404).json({error:'target user not found, ask them to generate SM2 key first'})
-    const targetUser=ur[0].values[0][0]
-    const sr=db.exec('SELECT * FROM shares WHERE file_id=? AND username=?',[req.params.id,targetUser])
+    // Store share by pubKey (recipient matched by their own pubKey later)
+    const sr=db.exec('SELECT * FROM shares WHERE file_id=? AND username=?',[req.params.id,targetPubKey])
     if(sr.length&&sr[0].values.length)return res.status(400).json({error:'already shared'})
-    let sigStr='';try{sigStr=typeof grantSignature==='string'?grantSignature:JSON.stringify(grantSignature)}catch{}
-    db.run('INSERT INTO shares VALUES(?,?,?)',[req.params.id,targetUser,new Date().toISOString()])
+    db.run('INSERT INTO shares VALUES(?,?,?)',[req.params.id,targetPubKey,new Date().toISOString()])
     saveDB();res.json({ok:true})
   })
   app.delete('/api/files/:id',userAuth,(req,res)=>{
