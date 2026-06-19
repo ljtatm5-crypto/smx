@@ -184,26 +184,6 @@ async function startServer(){
     res.json({ok:true,status:'ok',mode:'E2EE Multi-User SQLite',files:count})
   })
 
-  // ===== 管理员 API (需 ADMIN_KEY) =====
-  const ADMIN_KEY = process.env.ADMIN_KEY || 'smc-admin-2024'
-  function adminAuth(req,res,next){const key=(req.headers['x-admin-key']||req.query.key||'');if(key!==ADMIN_KEY)return res.status(403).json({error:'admin key required'});next()}
-  app.get('/api/admin/stats',adminAuth,(req,res)=>{
-    const uc=db.exec('SELECT COUNT(*) FROM users');const fc=db.exec('SELECT COUNT(*) FROM files');const sc=db.exec('SELECT COUNT(*) FROM shares')
-    res.json({users:uc[0].values[0][0],files:fc[0].values[0][0],shares:sc[0].values[0][0]})
-  })
-  app.get('/api/admin/users',adminAuth,(req,res)=>{
-    const r=db.exec('SELECT username,created,pub_key FROM users ORDER BY created DESC')
-    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],created:v[1],pubKey:v[2]?v[2].slice(0,20)+'...':'未设置'})))
-  })
-  app.delete('/api/admin/users/:username',adminAuth,(req,res)=>{
-    db.run('DELETE FROM shares WHERE username=?',[req.params.username]);db.run('DELETE FROM files WHERE owner=?',[req.params.username]);db.run('DELETE FROM users WHERE username=?',[req.params.username]);saveDB();res.json({ok:true})
-  })
-  app.get('/api/admin/files',adminAuth,(req,res)=>{
-    const r=db.exec('SELECT id,owner,original_name,size,uploaded_at FROM files ORDER BY uploaded_at DESC')
-    res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],owner:v[1],name:v[2],size:v[3],uploadedAt:v[4]})))
-  })
-  app.delete('/api/admin/files/:id',adminAuth,(req,res)=>{db.run('DELETE FROM shares WHERE file_id=?',[req.params.id]);db.run('DELETE FROM files WHERE id=?',[req.params.id]);saveDB();res.json({ok:true})})
-
   app.listen(PORT,'0.0.0.0',()=>console.log('[SMC SQLite] http://0.0.0.0:'+PORT))
 }
 
