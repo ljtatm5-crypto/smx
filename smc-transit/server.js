@@ -115,7 +115,7 @@ document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'))
 document.getElementById('tab-'+t).classList.add('active');
 var c=document.getElementById('content');
 if(t==='dashboard'){var s=await api('/api/admin/stats');c.innerHTML='<h3>仪表盘</h3><div class=cards><div class=card><div class=num>'+s.users+'</div><div class=label>用户总数</div></div><div class=card><div class=num>'+s.files+'</div><div class=label>文件总数</div></div><div class=card><div class=num>'+s.shares+'</div><div class=label>分享次数</div></div><div class=card><div class=num>'+s.auditLogs+'</div><div class=label>审计日志</div></div></div>'}
-if(t==='users'){var u=await api('/api/admin/users');c.innerHTML='<h3>用户管理</h3><div class=meta>共 '+u.length+' 个用户</div><table><tr><th>用户名</th><th>注册时间</th><th>角色</th><th>操作</th></tr>'+(u.length===0?'<tr><td colspan=4 class=empty>暂无用户</td></tr>':u.map(function(x){return'<tr><td>'+x.username+'</td><td>'+x.created.slice(0,10)+'</td><td>'+x.role+'</td><td><button class="btn-sm btn-danger" onclick="delUser(\\''+x.username+'\\')">删除</button></td></tr>'}).join(''))+'</table>'}
+if(t==='users'){var u=await api('/api/admin/users');c.innerHTML='<h3>用户管理</h3><div class=meta>共 '+u.length+' 个用户</div><table><tr><th>用户名</th><th>公钥</th><th>注册时间</th><th>角色</th><th>操作</th></tr>'+(u.length===0?'<tr><td colspan=5 class=empty>暂无用户</td></tr>':u.map(function(x){return'<tr><td>'+x.username+'</td><td style=font-size:11px>'+(x.pubKey==='未设置'?'未设置':x.pubKey.slice(0,20)+'...')+'</td><td>'+x.created.slice(0,10)+'</td><td>'+x.role+'</td><td><button class="btn-sm btn-danger" onclick="delUser(\\''+x.username+'\\')">删除</button></td></tr>'}).join(''))+'</table>'}
 if(t==='files'){var f=await api('/api/admin/files');c.innerHTML='<h3>文件管理</h3><div class=meta>共 '+f.length+' 个文件</div><table><tr><th>ID</th><th>所有者</th><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr>'+(f.length===0?'<tr><td colspan=6 class=empty>暂无文件</td></tr>':f.map(function(x){var sz=x.size<1024?x.size+'B':x.size<1048576?(x.size/1024).toFixed(1)+'KB':(x.size/1048576).toFixed(1)+'MB';return'<tr><td style=font-size:11px>'+x.id.slice(0,12)+'...</td><td>'+x.owner+'</td><td>'+x.name+'</td><td>'+sz+'</td><td>'+x.uploadedAt.slice(0,10)+'</td><td><button class="btn-sm btn-danger" onclick="delFile(\\''+x.id+'\\')">删除</button></td></tr>'}).join(''))+'</table>'}
 if(t==='logs'){var l=await api('/api/admin/logs');c.innerHTML='<h3>审计日志</h3><table><tr><th>时间</th><th>用户</th><th>操作</th><th>详情</th></tr>'+(l.length===0?'<tr><td colspan=4 class=empty>暂无日志</td></tr>':l.map(function(x){return'<tr><td>'+x.createdAt.slice(0,19)+'</td><td>'+x.username+'</td><td>'+x.action+'</td><td>'+x.detail+'</td></tr>'}).join(''))+'</table>'}
 }
@@ -181,8 +181,8 @@ async function startServer(){
     res.json({users:uc[0].values[0][0],files:fc[0].values[0][0],shares:sc[0].values[0][0],auditLogs:ac[0].values[0][0]})
   })
   app.get('/api/admin/users',adminAuth,(req,res)=>{
-    const r=db.exec('SELECT username,created,role FROM users ORDER BY created DESC')
-    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],created:v[1],role:v[2]||'user'})))
+    const r=db.exec('SELECT username,password_hash,pub_key,created,role FROM users ORDER BY created DESC')
+    res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],passwordHash:v[1],pubKey:v[2]||'未设置',created:v[3],role:v[4]||'user'})))
   })
   app.delete('/api/admin/users/:username',adminAuth,(req,res)=>{
     if(req.params.username===req.user)return res.status(400).json({error:'cannot delete self'})
@@ -210,8 +210,9 @@ async function startServer(){
     const{username,password}=req.body
     if(!username||!password)return res.status(400).json({error:'missing fields'})
     if(!/^[a-zA-Z0-9_一-龥]{2,20}$/.test(username))return res.status(400).json({error:'invalid username'})
+    if(password.length<6||!/[a-zA-Z]/.test(password)||!/[0-9]/.test(password))return res.status(400).json({error:'密码需至少6位且包含字母和数字'})
     const r=db.exec('SELECT * FROM users WHERE username=?',[username])
-    if(r.length&&r[0].values.length)return res.status(400).json({error:'exists'})
+    if(r.length&&r[0].values.length)return res.status(400).json({error:'用户名已被使用'})
     db.run('INSERT INTO users VALUES(?,?,?,?,?)',[username,sm3HashHex(password),'',new Date().toISOString(),'user'])
     saveDB();addLog(username,'register','','新用户注册');res.json({ok:true,username})
   })
@@ -235,6 +236,14 @@ async function startServer(){
     const token=(req.headers['authorization']||'').replace('Bearer ','')
     const s=sessions[token];if(!s)return res.status(401).json({error:'not logged in'})
     db.run('UPDATE users SET pub_key=? WHERE username=?',[req.body.pubKey||'',s.username]);saveDB();res.json({ok:true})
+  })
+  app.get('/api/user/checkPubKey',(req,res)=>{
+    const{username,pubKey}=req.query
+    if(!username||!pubKey)return res.status(400).json({error:'missing params'})
+    const r=db.exec('SELECT pub_key FROM users WHERE username=?',[username])
+    if(!r.length||!r[0].values.length)return res.json({match:false,error:'user not found'})
+    const storedPub=r[0].values[0][0]||''
+    res.json({match:storedPub===pubKey})
   })
   app.get('/api/users/list',(req,res)=>{
     const token=(req.headers['authorization']||'').replace('Bearer ','')
