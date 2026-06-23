@@ -291,6 +291,10 @@ async function startServer(){
     db.run('INSERT INTO shares VALUES(?,?,?)',[req.params.id,targetUser,new Date().toISOString()])
     saveDB();res.json({ok:true})
   })
+  app.delete('/api/files/:id/share/:username',userAuth,(req,res)=>{
+    db.run('DELETE FROM shares WHERE file_id=? AND (username=? OR username LIKE ?)',[req.params.id,req.params.username,req.params.username+':%'])
+    saveDB();res.json({ok:true})
+  })
   app.delete('/api/files/:id',userAuth,(req,res)=>{
     const r=db.exec('SELECT * FROM files WHERE id=? AND owner=?',[req.params.id,req.user])
     if(!r.length||!r[0].values.length)return res.status(404).json({error:'not found'})
