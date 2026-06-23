@@ -128,7 +128,7 @@ function doLogout(){token='';document.getElementById('loginPage').style.display=
 // ==================== Express ====================
 async function startServer(){
   _SQL=await initSqlJs();initDB()
-  const PORT=process.env.PORT||process.env.API_PORT||8080
+  const PORT=process.env.PORT||process.env.API_PORT||80
   const app=express();app.use(cors());app.use(express.json({limit:'1mb'}))
   const uploadFile=multer({storage:multer.memoryStorage(),limits:{fileSize:500*1024*1024}}).single('file')
   const STORAGE_DIR=()=>{const d=path.join(getDataDir(),'storage');try{fs.mkdirSync(d,{recursive:true})}catch{};return d}
