@@ -59,7 +59,7 @@ function saveDB(){try{fs.writeFileSync(path.join(getDataDir(),'smc.db'),db.expor
 function initDB(){
   db=new _SQL.Database()
   const dbPath=path.join(getDataDir(),'smc.db')
-  try{const buf=fs.readFileSync(dbPath);if(buf.length>0)db=new _SQL.Database(buf);else{db.run('CREATE TABLE users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL)')}}catch{db.run('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE IF NOT EXISTS api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL)')}
+  try{const buf=fs.readFileSync(dbPath);if(buf.length>0)db=new _SQL.Database(buf);else{db.run('CREATE TABLE users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL,prev_hash TEXT,chain_hash TEXT)')}}catch{db.run('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE IF NOT EXISTS api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL,prev_hash TEXT,chain_hash TEXT)')}
   saveDB()
 }
 
@@ -152,10 +152,18 @@ async function startServer(){
   app.post('/api/sm2/encrypt',auth,(req,res)=>{const{m,pk}=req.body;try{res.json({c:sm2Encrypt(m,pk)})}catch(e){res.status(400).json({error:e.message})}})
   app.post('/api/sm2/decrypt',auth,(req,res)=>{const{c,sk}=req.body;try{res.json({p:new TextDecoder().decode(sm2Decrypt(c,sk))})}catch(e){res.status(400).json({error:e.message})}})
 
-  // ===== 审计日志 =====
+  // ===== 审计日志 (SM3链) =====
   const sessions={}
   function addLog(username,action,target,detail){
-    try{db.run('INSERT INTO audit_logs(username,action,target,detail,created_at) VALUES(?,?,?,?,?)',[username||'unknown',action,target||'',detail||'',new Date().toISOString()]);saveDB()}catch{}
+    try{
+      const r=db.exec('SELECT chain_hash FROM audit_logs ORDER BY id DESC LIMIT 1')
+      const prevHash=(r.length&&r[0].values.length)?r[0].values[0][0]:'0'.repeat(64)
+      const now=new Date().toISOString()
+      const chainData=prevHash+now+action+(username||'')+(target||'')
+      const chainHash=sm3HashHex(chainData)
+      db.run('INSERT INTO audit_logs(username,action,target,detail,created_at,prev_hash,chain_hash) VALUES(?,?,?,?,?,?,?)',[username||'unknown',action,target||'',detail||'',now,prevHash,chainHash])
+      saveDB()
+    }catch{}
   }
   function adminAuth(req,res,next){
     const token=(req.headers['authorization']||'').replace('Bearer ','')
@@ -252,7 +260,7 @@ async function startServer(){
     const r=db.exec('SELECT username,pub_key FROM users ORDER BY username')
     res.json((r[0]||{values:[]}).values.map(v=>({username:v[0],pubKey:v[1]||'未设置'})))
   })
-  app.get('/api/user/audit/logs',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s)return res.status(401).json({error:'not logged in'});const r=db.exec('SELECT * FROM audit_logs WHERE username=? ORDER BY id DESC LIMIT 100',[s.username]);res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],username:v[1],action:v[2],target:v[3],detail:v[4],createdAt:v[5]})))})
+  app.get('/api/user/audit/logs',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(!s)return res.status(401).json({error:'not logged in'});const r=db.exec('SELECT * FROM audit_logs WHERE username=? ORDER BY id DESC LIMIT 100',[s.username]);res.json((r[0]||{values:[]}).values.map(v=>({id:v[0],username:v[1],action:v[2],target:v[3],detail:v[4],createdAt:v[5],prevHash:v[6],chainHash:v[7]})))})
   app.post('/api/user/logout',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(s){addLog(s.username,'退出登录','','用户登出')};delete sessions[token];res.json({ok:true})})
 
   // ===== 文件 (SQLite) =====
