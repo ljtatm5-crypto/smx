@@ -59,7 +59,7 @@ function saveDB(){try{fs.writeFileSync(path.join(getDataDir(),'smc.db'),db.expor
 function initDB(){
   db=new _SQL.Database()
   const dbPath=path.join(getDataDir(),'smc.db')
-  try{const buf=fs.readFileSync(dbPath);if(buf.length>0)db=new _SQL.Database(buf);else{db.run('CREATE TABLE users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL,prev_hash TEXT,chain_hash TEXT)')}}catch{db.run('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,encrypted_key TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE IF NOT EXISTS api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL,prev_hash TEXT,chain_hash TEXT)')}
+  try{const buf=fs.readFileSync(dbPath);if(buf.length>0)db=new _SQL.Database(buf);else{db.run('CREATE TABLE users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL,prev_hash TEXT,chain_hash TEXT)')}}catch{db.run('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,pub_key TEXT DEFAULT "",created TEXT NOT NULL,role TEXT DEFAULT "user")');db.run('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT NOT NULL,name TEXT NOT NULL,original_name TEXT,size INTEGER NOT NULL,sm3_hash TEXT NOT NULL,pub_key TEXT NOT NULL,signature TEXT,uploaded_at TEXT NOT NULL)');db.run('CREATE TABLE IF NOT EXISTS shares(file_id TEXT NOT NULL,username TEXT NOT NULL,granted_at TEXT NOT NULL,PRIMARY KEY(file_id,username))');db.run('CREATE TABLE IF NOT EXISTS api_keys(name TEXT PRIMARY KEY,key TEXT NOT NULL,created TEXT NOT NULL,last_used TEXT,usage_count INTEGER DEFAULT 0)');db.run('CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL,prev_hash TEXT,chain_hash TEXT)')}
   saveDB()
 }
 
@@ -264,12 +264,41 @@ async function startServer(){
   app.post('/api/user/logout',(req,res)=>{const token=(req.headers['authorization']||'').replace('Bearer ','');const s=sessions[token];if(s){addLog(s.username,'退出登录','','用户登出')};delete sessions[token];res.json({ok:true})})
 
   // ===== 文件 (SQLite) =====
-  app.post('/api/files/upload',userAuth,(req,res)=>{uploadFile(req,res,function(err){if(err)return res.status(err.code==='LIMIT_FILE_SIZE'?413:500).json({error:err.message});try{const{name,originalName,sm3Hash,pubKey,signature,encryptedKey}=req.body;if(!req.file||!req.file.buffer)return res.status(400).json({error:'no file'});if(!name||!pubKey||!sm3Hash)return res.status(400).json({error:'missing fields'});const id=fileUid();fs.writeFileSync(path.join(STORAGE_DIR(),id+'.enc'),req.file.buffer);let sig=null;try{sig=typeof signature==='string'?JSON.parse(signature):signature}catch{};db.run('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)',[id,req.user,name,originalName||name,req.file.size,sm3Hash,pubKey,sig?JSON.stringify(sig):''',new Date().toISOString()]);saveDB();if(req.body.pubKey){const ur=db.exec('SELECT pub_key FROM users WHERE username=?',[req.user]);if(!ur[0].values[0][0]){db.run('UPDATE users SET pub_key=? WHERE username=?',[pubKey,req.user]);saveDB()}};addLog(req.user,'文件上传',originalName||name,'SM2签名确权');res.json({id,name,size:req.file.size})}catch(e){res.status(500).json({error:e.message})}})})
+  app.post('/api/files/upload', userAuth, (req, res) => {
+    uploadFile(req, res, function (err) {
+      if (err) return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 500).json({ error: err.message })
+      try {
+        const { name, originalName, sm3Hash, pubKey, signature, encryptedKey } = req.body
+        if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'no file' })
+        if (!name || !pubKey || !sm3Hash) return res.status(400).json({ error: 'missing fields' })
+        const id = fileUid()
+        fs.writeFileSync(path.join(STORAGE_DIR(), id + '.enc'), req.file.buffer)
+        let sig = null
+        try { sig = typeof signature === 'string' ? JSON.parse(signature) : signature } catch {}
+        db.run('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?)', [
+          id, req.user, name, originalName || name, req.file.size, sm3Hash,
+          pubKey, sig ? JSON.stringify(sig) : '', new Date().toISOString()
+        ])
+        saveDB()
+        if (req.body.pubKey) {
+          const ur = db.exec('SELECT pub_key FROM users WHERE username=?', [req.user])
+          if (!ur[0].values[0][0]) {
+            db.run('UPDATE users SET pub_key=? WHERE username=?', [pubKey, req.user])
+            saveDB()
+          }
+        }
+        addLog(req.user, '文件上传', originalName || name, 'SM2签名确权')
+        res.json({ id, name, size: req.file.size })
+      } catch (e) {
+        res.status(500).json({ error: e.message })
+      }
+    })
+  })
   app.get('/api/files/list',userAuth,(req,res)=>{
     const my=db.exec('SELECT * FROM files WHERE owner=? ORDER BY uploaded_at DESC',[req.user])
-    const myFiles=(my[0]||{values:[]}).values.map(r=>({id:r[0],owner:req.user,name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:true}))
+    const myFiles=(my[0]||{values:[]}).values.map(r=>({id:r[0],owner:req.user,name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,uploadedAt:r[8],isMine:true}))
     const sr=db.exec("SELECT f.* FROM files f JOIN shares s ON f.id=s.file_id WHERE s.username=? ORDER BY f.uploaded_at DESC",[req.user])
-    const sharedFiles=(sr[0]||{values:[]}).values.map(r=>({id:r[0],owner:r[1],name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,encryptedKey:r[8],uploadedAt:r[9],isMine:false,sharedBy:r[1]}))
+    const sharedFiles=(sr[0]||{values:[]}).values.map(r=>({id:r[0],owner:r[1],name:r[2],originalName:r[3],size:r[4],sm3Hash:r[5],pubKey:r[6],signature:r[7]?JSON.parse(r[7]):null,uploadedAt:r[8],isMine:false,sharedBy:r[1]}))
     const authMap={}
     for(const f of myFiles){const ar=db.exec('SELECT username FROM shares WHERE file_id=?',[f.id]);authMap[f.id]=(ar[0]||{values:[]}).values.map(v=>({username:v[0]}))}
     res.json({my:myFiles.map(f=>({...f,authorizedUsers:authMap[f.id]||[]})),shared:sharedFiles.map(f=>({...f,authorizedUsers:[]}))})
